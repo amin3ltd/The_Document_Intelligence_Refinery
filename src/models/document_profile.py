@@ -1,7 +1,7 @@
 """Document Profile Pydantic Model for the Document Intelligence Refinery."""
 
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, Optional
 from enum import Enum
 
 
@@ -72,6 +72,26 @@ class DocumentProfile(BaseModel):
     has_tables: bool = Field(default=False, description="Whether tables were detected")
     has_figures: bool = Field(default=False, description="Whether figures/images were detected")
     
+    # Special document flags
+    is_zero_text_document: bool = Field(
+        default=False, 
+        description="Whether the document has zero or minimal text content"
+    )
+    is_form_fillable: bool = Field(
+        default=False, 
+        description="Whether the document contains form fields"
+    )
+    zero_text_page_count: int = Field(
+        default=0, 
+        ge=0, 
+        description="Number of pages with zero/minimal text"
+    )
+    form_fillable_page_count: int = Field(
+        default=0, 
+        ge=0, 
+        description="Number of pages with form fields"
+    )
+    
     class Config:
         """Pydantic model configuration."""
         use_enum_values = True
@@ -92,6 +112,10 @@ class DocumentProfile(BaseModel):
                 "image_ratio_avg": 0.15,
                 "confidence_score": 0.88,
                 "has_tables": True,
-                "has_figures": True
+                "has_figures": True,
+                "is_zero_text_document": False,
+                "is_form_fillable": False,
+                "zero_text_page_count": 0,
+                "form_fillable_page_count": 0
             }
         }
