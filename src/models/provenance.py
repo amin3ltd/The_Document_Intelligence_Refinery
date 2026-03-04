@@ -1,6 +1,6 @@
 """ProvenanceChain schema for source tracking and verification."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from datetime import datetime
@@ -30,6 +30,21 @@ class SourceLocation(BaseModel):
         default=None,
         description="Line numbers within the block"
     )
+    
+    @field_validator('bbox')
+    @classmethod
+    def validate_bbox_coordinates(cls, v: Optional[List[float]]) -> Optional[List[float]]:
+        """Validate bbox coordinates if provided."""
+        if v is None:
+            return v
+        if len(v) != 4:
+            raise ValueError(f"BBox must have exactly 4 coordinates, got {len(v)}")
+        x0, y0, x1, y1 = v
+        if x1 <= x0:
+            raise ValueError(f"x1 ({x1}) must be greater than x0 ({x0})")
+        if y1 <= y0:
+            raise ValueError(f"y1 ({y1}) must be greater than y0 ({y0})")
+        return v
 
 
 class SourceContent(BaseModel):
@@ -120,6 +135,18 @@ class ProvenanceChain(BaseModel):
         description="Number of verified claims"
     )
     
+    # Surface bbox and content_hash at chain level for easy access
+    primary_bbox: Optional[List[float]] = Field(
+        default=None,
+        description="Primary bounding box for the entire extraction",
+        min_length=4,
+        max_length=4
+    )
+    content_hash: Optional[str] = Field(
+        default=None,
+        description="Combined SHA256 hash of all content for verification"
+    )
+    
     # Chain metadata
     created_at: datetime = Field(
         default_factory=datetime.utcnow,
@@ -129,6 +156,21 @@ class ProvenanceChain(BaseModel):
         default_factory=datetime.utcnow,
         description="Last update timestamp"
     )
+    
+    @field_validator('primary_bbox')
+    @classmethod
+    def validate_bbox_coordinates(cls, v: Optional[List[float]]) -> Optional[List[float]]:
+        """Validate bbox coordinates if provided."""
+        if v is None:
+            return v
+        if len(v) != 4:
+            raise ValueError(f"BBox must have exactly 4 coordinates, got {len(v)}")
+        x0, y0, x1, y1 = v
+        if x1 <= x0:
+            raise ValueError(f"x1 ({x1}) must be greater than x0 ({x0})")
+        if y1 <= y0:
+            raise ValueError(f"y1 ({y1}) must be greater than y0 ({y0})")
+        return v
     
     def add_claim(
         self,
@@ -188,6 +230,35 @@ class ProvenanceChain(BaseModel):
             summary[claim.verification_status.value] += 1
         return summary
     
+    def compute_content_hash(self) -> str:
+        """Compute combined hash of all claim content."""
+        import hashlib
+        hasher = hashlib.sha256()
+        for claim in sorted(self.claims, key=lambda c: c.claim_id):
+            hasher.update(claim.content.encode('utf-8'))
+        self.content_hash = f"sha256:{hasher.hexdigest()}"
+        return self.content_hash
+    
+    def compute_primary_bbox(self) -> Optional[List[float]]:
+        """Compute primary bounding box from all claims."""
+        all_bboxes = []
+        for claim in self.claims:
+            for source in claim.sources:
+                if source.location.bbox:
+                    all_bboxes.append(source.location.bbox)
+        
+        if not all_bboxes:
+            return None
+        
+        # Compute union of all bboxes
+        x0 = min(b[0] for b in all_bboxes)
+        y0 = min(b[1] for b in all_bboxes)
+        x1 = max(b[2] for b in all_bboxes)
+        y1 = max(b[3] for b in all_bboxes)
+        
+        self.primary_bbox = [x0, y0, x1, y1]
+        return self.primary_bbox
+    
     class Config:
         """Pydantic model configuration."""
         use_enum_values = True
@@ -217,6 +288,8 @@ class ProvenanceChain(BaseModel):
                     }
                 ],
                 "total_sources": 1,
-                "verified_claims": 1
+                "verified_claims": 1,
+                "primary_bbox": [50, 200, 500, 280],
+                "content_hash": "sha256:def456"
             }
         }
