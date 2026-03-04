@@ -1,0 +1,236 @@
+# Extraction Rules Configuration
+# 
+# This file defines the thresholds and rules for the Document Intelligence Refinery.
+# Based on the decision tree from DOMAIN_NOTES.md.
+
+# Confidence thresholds per strategy
+confidence_thresholds:
+  strategy_a:
+    # Fast Text (pdfplumber)
+    high: 0.85
+    medium: 0.50
+    low: 0.0
+    action_on_low: "escalate_to_strategy_b"
+    action_on_medium: "escalate_to_strategy_b"
+  
+  strategy_b:
+    # Layout-Aware (MinerU/Docling)
+    high: 0.80
+    medium: 0.60
+    low: 0.0
+    action_on_low: "escalate_to_strategy_c"
+  
+  strategy_c:
+    # Vision-Augmented (VLM)
+    high: 0.75
+    medium: 0.50
+    action_on_low: "flag_for_manual_review"
+
+# Routing rules based on DocumentProfile
+routing_rules:
+  native_digital:
+    single_column: "strategy_a"
+    multi_column: "strategy_b"
+    table_heavy: "strategy_b"
+    figure_heavy: "strategy_b"
+    mixed: "strategy_b"
+  
+  scanned_image:
+    default: "strategy_c"
+  
+  mixed:
+    simple: "strategy_a"
+    complex: "strategy_b"
+  
+  form_fillable:
+    default: "strategy_b"
+
+# Chunking constitution rules
+chunking_rules:
+  # Maximum chunk sizes (characters)
+  max_paragraph_size: 2000
+  max_heading_size: 500
+  max_table_cell_size: 500
+  max_figure_caption_size: 300
+  
+  # Minimum chunk sizes to avoid fragmentation
+  min_chunk_size: 50
+  min_meaningful_chunk_size: 20
+  
+  # Paragraph splitting rules
+  paragraph_split:
+    # Split at sentence boundaries if possible
+    prefer_sentence_boundaries: true
+    # Maximum words before forced split
+    max_words_before_split: 400
+  
+  # Table handling
+  table_rules:
+    # Never split table cells across chunks
+    preserve_cell_integrity: true
+    # Keep table with caption
+    preserve_table_caption: true
+    # Minimum rows to treat as table
+    min_rows: 2
+  
+  # Figure handling
+  figure_rules:
+    # Keep figure with caption
+    preserve_figure_caption: true
+    # Keep figure with referenced text
+    preserve_figure_references: true
+  
+  # Cross-reference preservation
+  cross_reference_rules:
+    # Minimum relationship strength to preserve
+    min_relationship_strength: 0.5
+    # Types of references to preserve
+    reference_types:
+      - "table"
+      - "figure"
+      - "section"
+      - "footnote"
+
+# Triage classification thresholds
+triage_thresholds:
+  # Character density (chars / page area)
+  char_density:
+    high: 0.001
+    low: 0.0001
+  
+  # Character count per page
+  char_count:
+    minimum_meaningful: 100
+    low_threshold: 50
+  
+  # Image area ratio
+  image_ratio:
+    high: 0.50
+    very_high: 0.80
+    # High ratio suggests scanned document
+  
+  # Column detection
+  columns:
+    single: 1
+    multi_start: 2
+    max_detectable: 4
+  
+  # Table detection
+  table_detection:
+    min_rows: 2
+    min_cols: 2
+    # Bounding box pattern threshold
+    bbox_similarity_threshold: 0.7
+
+# Domain classification keywords
+domain_keywords:
+  financial:
+    - "revenue"
+    - "balance sheet"
+    - "income"
+    - "fiscal"
+    - "profit"
+    - "loss"
+    - "assets"
+    - "liabilities"
+    - "equity"
+    - "cash flow"
+  
+  legal:
+    - "plaintiff"
+    - "defendant"
+    - "court"
+    - "whereas"
+    - "hereby"
+    - "contract"
+    - "agreement"
+    - "clause"
+    - "liability"
+  
+  technical:
+    - "algorithm"
+    - "specification"
+    - "system"
+    - "architecture"
+    - "protocol"
+    - "interface"
+    - "implementation"
+    - "api"
+  
+  medical:
+    - "patient"
+    - "diagnosis"
+    - "treatment"
+    - "symptom"
+    - "therapy"
+    - "medication"
+    - "clinical"
+    - "health"
+
+# VLM configuration
+vlm_config:
+  # Supported providers
+  providers:
+    - "openai"
+    - "google"
+    - "anthropic"
+  
+  # Default model settings
+  defaults:
+    openai:
+      model: "gpt-4o"
+      temperature: 0.0
+      max_tokens: 4096
+    
+    google:
+      model: "gemini-pro-vision"
+      temperature: 0.0
+      max_tokens: 4096
+    
+    anthropic:
+      model: "claude-3-opus-20240229"
+      temperature: 0.0
+      max_tokens: 4096
+  
+  # Extraction prompts
+  prompts:
+    system: "You are a document extraction expert. Extract all text content from the provided document page."
+    user: "Extract all text, tables, and figures from this document page. Preserve the structure and layout."
+  
+  # Retry configuration
+  retry:
+    max_attempts: 3
+    backoff_factor: 2
+    initial_delay_ms: 1000
+
+# Quality gates
+quality_gates:
+  # Minimum confidence to pass to next stage
+  triage_to_extraction: 0.60
+  extraction_to_chunking: 0.70
+  chunking_to_indexing: 0.80
+  indexing_to_query: 0.85
+  
+  # Flag for manual review
+  manual_review_threshold: 0.50
+  
+  # Maximum failure rate
+  max_page_failure_rate: 0.10
+  max_chunk_failure_rate: 0.05
+
+# Logging and audit
+audit:
+  # Log all classification decisions
+  log_classifications: true
+  
+  # Log extraction attempts
+  log_extractions: true
+  
+  # Log escalations
+  log_escalations: true
+  
+  # Log confidence scores
+  log_confidence: true
+  
+  # Audit trail retention (days)
+  retention_days: 90
