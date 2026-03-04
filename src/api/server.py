@@ -1,0 +1,321 @@
+"""
+Document Intelligence Refinery - REST API Server
+
+FastAPI-based REST API for document extraction pipeline.
+Supports Ollama/LM Studio for local VLM inference.
+
+Endpoints:
+- POST /documents/upload - Upload and process a document
+- GET /documents/{doc_id}/profile - Get document profile
+- GET /documents/{doc_id}/extraction - Get extraction results
+- GET /documents/{doc_id}/chunks - Get semantic chunks
+- GET /documents/{doc_id}/pageindex - Get PageIndex tree
+- POST /query - Query the document knowledge base
+"""
+
+import os
+import json
+import uuid
+from pathlib import Path
+from typing import Optional, List
+from datetime import datetime
+
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+from src.agents.triage import TriageAgent
+from src.agents.extractor import ExtractionRouter
+from src.agents.chunker import Chunker
+from src.agents.indexer import Indexer
+from src.agents.query_agent import create_query_agent, QueryResult
+from src.models.document_profile import DocumentProfile
+from src.models.extracted_document import ExtractedDocument
+from src.models.ldu import LDU
+from src.models.page_index import PageIndex
+from src.models.provenance import ProvenanceChain, ProvenanceSource
+from src.utils.ledger import ExtractionLedger
+from loguru import logger
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="Document Intelligence Refinery API",
+    description="Production-grade document extraction pipeline with tiered strategy routing",
+    version="0.1.0"
+)
+
+# Configuration
+REFINERY_DIR = Path(".refinery")
+PROFILES_DIR = REFINERY_DIR / "profiles"
+EXTRACTIONS_DIR = REFINERY_DIR / "extractions"
+PAGEINDEX_DIR = REFINERY_DIR / "pageindex"
+
+# Create directories
+PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+EXTRACTIONS_DIR.mkdir(parents=True, exist_ok=True)
+PAGEINDEX_DIR.mkdir(parents=True, exist_ok=True)
+
+# Global instances
+triage_agent = TriageAgent()
+extraction_router = ExtractionRouter()
+chunker_engine = Chunker()
+indexer = Indexer()
+ledger = ExtractionLedger()
+
+
+# Pydantic models for API
+class QueryRequest(BaseModel):
+    question: str
+    doc_id: str
+    mode: str = "auto"  # "pageindex", "semantic", "structured", "auto"
+
+
+class QueryResponse(BaseModel):
+    answer: str
+    provenance: ProvenanceChain
+    mode_used: str
+
+
+class DocumentStatus(BaseModel):
+    doc_id: str
+    status: str  # "processing", "completed", "failed"
+    profile: Optional[DocumentProfile] = None
+    extraction_complete: bool = False
+    chunking_complete: bool = False
+    indexing_complete: bool = False
+    error: Optional[str] = None
+
+
+# In-memory document status tracking
+document_status: dict = {}
+
+
+@app.get("/")
+async def root():
+    """Root endpoint with API info"""
+    return {
+        "name": "Document Intelligence Refinery API",
+        "version": "0.1.0",
+        "description": "Production-grade document extraction pipeline",
+        "endpoints": {
+            "upload": "POST /documents/upload",
+            "profile": "GET /documents/{doc_id}/profile",
+            "extraction": "GET /documents/{doc_id}/extraction",
+            "chunks": "GET /documents/{doc_id}/chunks",
+            "pageindex": "GET /documents/{doc_id}/pageindex",
+            "query": "POST /query"
+        }
+    }
+
+
+@app.post("/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = None
+) -> JSONResponse:
+    """
+    Upload and process a document through the full pipeline.
+    
+    Returns immediately with doc_id. Processing happens in background.
+    """
+    # Generate document ID
+    doc_id = str(uuid.uuid4())
+    
+    # Save uploaded file
+    file_path = EXTRACTIONS_DIR / f"{doc_id}_{file.filename}"
+    try:
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        logger.error(f"Failed to save file: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    
+    # Initialize status
+    document_status[doc_id] = DocumentStatus(
+        doc_id=doc_id,
+        status="processing",
+        profile=None,
+        extraction_complete=False,
+        chunking_complete=False,
+        indexing_complete=False
+    )
+    
+    # Process in background
+    if background_tasks:
+        background_tasks.add_task(process_document, doc_id, file_path)
+    
+    return JSONResponse({
+        "doc_id": doc_id,
+        "filename": file.filename,
+        "status": "processing",
+        "message": "Document uploaded. Processing started in background."
+    })
+
+
+async def process_document(doc_id: str, file_path: Path):
+    """Process document through all pipeline stages"""
+    try:
+        logger.info(f"Starting pipeline for document {doc_id}")
+        
+        # Stage 1: Triage
+        logger.info(f"[{doc_id}] Stage 1: Triage")
+        profile = await triage_agent.classify_document(str(file_path), doc_id)
+        document_status[doc_id].profile = profile
+        
+        # Save profile
+        profile_path = PROFILES_DIR / f"{doc_id}.json"
+        profile.model_dump_json()
+        with open(profile_path, "w") as f:
+            f.write(profile.model_dump_json())
+        
+        # Stage 2: Extraction
+        logger.info(f"[{doc_id}] Stage 2: Extraction")
+        extracted_doc = await extraction_router.extract(str(file_path), profile)
+        
+        # Save extraction
+        extraction_path = EXTRACTIONS_DIR / f"{doc_id}_extraction.json"
+        with open(extraction_path, "w") as f:
+            f.write(extracted_doc.model_dump_json())
+        document_status[doc_id].extraction_complete = True
+        
+        # Stage 3: Chunking
+        logger.info(f"[{doc_id}] Stage 3: Chunking")
+        chunks = chunker_engine.chunk(extracted_doc)
+        
+        # Save chunks
+        chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
+        with open(chunks_path, "w") as f:
+            f.write(json.dumps([c.model_dump() for c in chunks], indent=2))
+        document_status[doc_id].chunking_complete = True
+        
+        # Stage 4: Indexing
+        logger.info(f"[{doc_id}] Stage 4: Indexing")
+        page_index = indexer.build_pageindex(extracted_doc, chunks)
+        
+        # Save PageIndex
+        index_path = PAGEINDEX_DIR / f"{doc_id}_pageindex.json"
+        with open(index_path, "w") as f:
+            f.write(page_index.model_dump_json())
+        document_status[doc_id].indexing_complete = True
+        
+        # Mark complete
+        document_status[doc_id].status = "completed"
+        logger.info(f"Document {doc_id} processing complete")
+        
+    except Exception as e:
+        logger.error(f"Error processing document {doc_id}: {e}")
+        document_status[doc_id].status = "failed"
+        document_status[doc_id].error = str(e)
+
+
+@app.get("/documents/{doc_id}/status")
+async def get_document_status(doc_id: str) -> DocumentStatus:
+    """Get processing status of a document"""
+    if doc_id not in document_status:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return document_status[doc_id]
+
+
+@app.get("/documents/{doc_id}/profile")
+async def get_document_profile(doc_id: str) -> DocumentProfile:
+    """Get document profile"""
+    profile_path = PROFILES_DIR / f"{doc_id}.json"
+    if not profile_path.exists():
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    with open(profile_path, "r") as f:
+        data = json.load(f)
+    return DocumentProfile(**data)
+
+
+@app.get("/documents/{doc_id}/extraction")
+async def get_extraction(doc_id: str) -> ExtractedDocument:
+    """Get extraction results"""
+    extraction_path = EXTRACTIONS_DIR / f"{doc_id}_extraction.json"
+    if not extraction_path.exists():
+        raise HTTPException(status_code=404, detail="Extraction not found")
+    
+    with open(extraction_path, "r") as f:
+        data = json.load(f)
+    return ExtractedDocument(**data)
+
+
+@app.get("/documents/{doc_id}/chunks")
+async def get_chunks(doc_id: str) -> List[LDU]:
+    """Get semantic chunks"""
+    chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
+    if not chunks_path.exists():
+        raise HTTPException(status_code=404, detail="Chunks not found")
+    
+    with open(chunks_path, "r") as f:
+        data = json.load(f)
+    return [LDU(**chunk) for chunk in data]
+
+
+@app.get("/documents/{doc_id}/pageindex")
+async def get_pageindex(doc_id: str) -> PageIndex:
+    """Get PageIndex tree"""
+    index_path = PAGEINDEX_DIR / f"{doc_id}_pageindex.json"
+    if not index_path.exists():
+        raise HTTPException(status_code=404, detail="PageIndex not found")
+    
+    with open(index_path, "r") as f:
+        data = json.load(f)
+    return PageIndex(**data)
+
+
+@app.post("/query", response_model=QueryResponse)
+async def query_document(request: QueryRequest) -> QueryResponse:
+    """Query the document knowledge base"""
+    # Load document data
+    doc_id = request.doc_id
+    
+    # Check if document exists
+    profile_path = PROFILES_DIR / f"{doc_id}.json"
+    if not profile_path.exists():
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    # Load chunks and pageindex
+    chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
+    index_path = PAGEINDEX_DIR / f"{doc_id}_pageindex.json"
+    
+    chunks = []
+    page_index = None
+    
+    if chunks_path.exists():
+        with open(chunks_path, "r") as f:
+            chunks = [LDU(**chunk) for chunk in json.load(f)]
+    
+    if index_path.exists():
+        with open(index_path, "r") as f:
+            page_index = PageIndex(**json.load(f))
+    
+    # Query using the query agent
+    result = await query_agent.query(
+        question=request.question,
+        chunks=chunks,
+        page_index=page_index,
+        mode=request.mode
+    )
+    
+    return QueryResponse(
+        answer=result.answer,
+        provenance=result.provenance,
+        mode_used=result.mode_used
+    )
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "documents_processed": len([s for s in document_status.values() if s.status == "completed"])
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
