@@ -2,7 +2,7 @@
 Triage Agent for Document Intelligence Refinery.
 
 The Triage Agent analyzes documents to determine their characteristics
-for optimal extraction strategy routing.
+for optimal extraction strategy routing. All thresholds are read from config.
 """
 
 import hashlib
@@ -23,6 +23,7 @@ from src.models.document_profile import (
     LayoutComplexity,
     OriginType,
 )
+from src.utils.config import get_config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +42,8 @@ class PageAnalysis:
     images: List[Dict] = field(default_factory=list)
     tables: int = 0
     has_embedded_fonts: bool = True
+    has_form_fields: bool = False
+    is_zero_text: bool = False
 
 
 @dataclass
@@ -55,45 +58,35 @@ class DomainClassifier:
     """
     Keyword-based domain classifier.
     
-    This is a simple rule-based classifier that can be extended
-    with VLM-based classification in the future.
+    Reads domain keywords from config for extensibility.
     """
     
-    # Domain keyword patterns
-    DOMAIN_KEYWORDS = {
-        DomainHint.FINANCIAL: [
-            r'\brevenue\b', r'\bbalance sheet\b', r'\bincome\b', r'\bfiscal\b',
-            r'\bprofit\b', r'\bloss\b', r'\bassets\b', r'\bliabilities\b',
-            r'\bequity\b', r'\bcash flow\b', r'\beps\b', r'\bebitda\b',
-            r'\bquarterly\b', r'\bannual\b', r'\bfinancial\b', r'\bcapital\b',
-        ],
-        DomainHint.LEGAL: [
-            r'\bplaintiff\b', r'\bdefendant\b', r'\bcourt\b', r'\bwhereas\b',
-            r'\bhereby\b', r'\bcontract\b', r'\bagreement\b', r'\bclause\b',
-            r'\bliability\b', r'\bindemnity\b', r'\bwarranty\b', r'\bremedy\b',
-            r'\bjurisdiction\b', r'\barbitration\b', r'\blegal\b', r'\bstatute\b',
-        ],
-        DomainHint.TECHNICAL: [
-            r'\balgorithm\b', r'\bspecification\b', r'\bsystem\b', r'\barchitecture\b',
-            r'\bprotocol\b', r'\binterface\b', r'\bimplementation\b', r'\bapi\b',
-            r'\bdatabase\b', r'\bsoftware\b', r'\bhardware\b', r'\bnetwork\b',
-            r'\bconfiguration\b', r'\bdeployment\b', r'\btechnical\b', r'\benhancement\b',
-        ],
-        DomainHint.MEDICAL: [
-            r'\bpatient\b', r'\bdiagnosis\b', r'\btreatment\b', r'\bsymptom\b',
-            r'\btherapy\b', r'\bmedication\b', r'\bclinical\b', r'\bhealth\b',
-            r'\bphysician\b', r'\bhospital\b', r'\bmedical\b', r'\b disease\b',
-            r'\bcondition\b', r'\bprocedure\b', r'\bexamination\b', r'\bprescription\b',
-        ],
-    }
-    
-    def __init__(self):
-        """Initialize the domain classifier with compiled regex patterns."""
+    def __init__(self, config=None):
+        """Initialize the domain classifier with compiled regex patterns from config."""
+        self.config = config or get_config()
         self._compiled_patterns: Dict[DomainHint, List[re.Pattern]] = {}
-        for domain, keywords in self.DOMAIN_KEYWORDS.items():
-            self._compiled_patterns[domain] = [
-                re.compile(kw, re.IGNORECASE) for kw in keywords
-            ]
+        self._load_patterns_from_config()
+    
+    def _load_patterns_from_config(self):
+        """Load domain keywords from configuration."""
+        domains_config = self.config.get("domains", {})
+        
+        # Map domain names to DomainHint enum
+        domain_mapping = {
+            "financial": DomainHint.FINANCIAL,
+            "legal": DomainHint.LEGAL,
+            "technical": DomainHint.TECHNICAL,
+            "medical": DomainHint.MEDICAL,
+        }
+        
+        for domain_name, domain_config in domains_config.items():
+            if domain_name in domain_mapping:
+                domain_hint = domain_mapping[domain_name]
+                keywords = domain_config.get("keywords", [])
+                self._compiled_patterns[domain_hint] = [
+                    re.compile(rf'\b{re.escape(kw)}\b', re.IGNORECASE) 
+                    for kw in keywords
+                ]
     
     def classify(self, text: str) -> Tuple[DomainHint, float]:
         """
@@ -140,23 +133,49 @@ class TriageAgent:
     - layout_complexity: Structural complexity of the document
     - domain_hint: Subject matter domain
     - extraction_cost_hint: Recommended extraction strategy
+    
+    All thresholds are read from config - no hardcoded values.
     """
     
-    # Thresholds for classification (from DOMAIN_NOTES.md)
-    CHAR_DENSITY_THRESHOLD = 0.001  # chars / page area
-    CHAR_COUNT_MIN = 100  # minimum chars per page
-    IMAGE_RATIO_THRESHOLD = 0.50  # >50% image suggests scanned
-    
-    def __init__(self, profiles_dir: str = ".refinery/profiles"):
+    def __init__(self, profiles_dir: str = ".refinery/profiles", config_path: Optional[str] = None):
         """
         Initialize the Triage Agent.
         
         Args:
             profiles_dir: Directory to save DocumentProfile outputs
+            config_path: Path to configuration file (optional)
         """
+        self.config = get_config(config_path)
         self.profiles_dir = Path(profiles_dir)
         self.profiles_dir.mkdir(parents=True, exist_ok=True)
-        self.domain_classifier = DomainClassifier()
+        self.domain_classifier = DomainClassifier(self.config)
+        
+        # Load thresholds from config
+        self._load_thresholds()
+    
+    def _load_thresholds(self):
+        """Load all thresholds from configuration."""
+        triage_config = self.config.get("triage", {})
+        
+        # Character density threshold for native digital detection
+        self.char_density_threshold = triage_config.get("char_density_native_threshold", 0.001)
+        
+        # Minimum character count to consider a page has meaningful text
+        self.char_count_min = triage_config.get("char_count_min", 100)
+        
+        # Image ratio threshold for scanned detection
+        self.image_ratio_threshold = triage_config.get("image_ratio_scanned_threshold", 0.50)
+        
+        # Column gap threshold for multi-column detection
+        self.column_gap_threshold = triage_config.get("column_gap_threshold", 100)
+        
+        # Table count threshold
+        self.table_count_threshold = triage_config.get("table_count_threshold", 2)
+        
+        # Special document flags
+        flags = triage_config.get("flags", {})
+        self.zero_text_threshold = flags.get("zero_text_threshold", 10)
+        self.form_fillable_detection = flags.get("form_fillable_detection", True)
     
     def analyze(self, file_path: str) -> TriageResult:
         """
@@ -186,6 +205,10 @@ class TriageAgent:
         total_images = sum(len(p.images) for p in page_analyses)
         total_tables = sum(p.tables for p in page_analyses)
         
+        # Check for special document types
+        zero_text_pages = sum(1 for p in page_analyses if p.is_zero_text)
+        form_fillable_pages = sum(1 for p in page_analyses if p.has_form_fields)
+        
         audit_log.append({
             "step": "page_analysis",
             "page_count": page_count,
@@ -193,6 +216,8 @@ class TriageAgent:
             "avg_image_ratio": avg_image_ratio,
             "total_images": total_images,
             "total_tables": total_tables,
+            "zero_text_pages": zero_text_pages,
+            "form_fillable_pages": form_fillable_pages,
         })
         
         # Classify origin_type
@@ -237,7 +262,7 @@ class TriageAgent:
             avg_char_density, avg_image_ratio, domain_confidence
         )
         
-        # Create the profile
+        # Create the profile with special flags
         profile = DocumentProfile(
             doc_id=doc_id,
             file_path=file_path,
@@ -253,6 +278,11 @@ class TriageAgent:
             confidence_score=confidence_score,
             has_tables=total_tables > 0,
             has_figures=total_images > 0,
+            # Add special flags
+            is_zero_text_document=zero_text_pages == page_count,
+            is_form_fillable=form_fillable_pages > 0,
+            zero_text_page_count=zero_text_pages,
+            form_fillable_page_count=form_fillable_pages,
         )
         
         # Save the profile
@@ -294,6 +324,24 @@ class TriageAgent:
         text = page.extract_text() or ""
         char_count = len(text)
         char_density = char_count / bbox_area if bbox_area > 0 else 0
+        
+        # Detect zero-text pages
+        is_zero_text = char_count <= self.zero_text_threshold
+        
+        # Detect form fields
+        has_form_fields = False
+        if self.form_fillable_detection:
+            # Check for common form field patterns
+            form_patterns = [r'/Tx', r'/Btn', r'/Ch', r'/Sig']
+            try:
+                page_dict = page.to_dict()
+                page_text = str(page_dict)
+                for pattern in form_patterns:
+                    if re.search(pattern, page_text):
+                        has_form_fields = True
+                        break
+            except:
+                pass
         
         # Extract text blocks with positions
         text_blocks = []
@@ -350,6 +398,8 @@ class TriageAgent:
             images=images,
             tables=len(tables),
             has_embedded_fonts=has_embedded_fonts,
+            has_form_fields=has_form_fields,
+            is_zero_text=is_zero_text,
         )
     
     def _classify_origin_type(self, analyses: List[PageAnalysis]) -> OriginType:
@@ -365,17 +415,17 @@ class TriageAgent:
         
         for page in analyses:
             # Native digital indicators
-            if page.char_density >= self.CHAR_DENSITY_THRESHOLD:
+            if page.char_density >= self.char_density_threshold:
                 native_indicators += 1
             if page.has_embedded_fonts:
                 native_indicators += 0.5
             
             # Scanned image indicators
-            if page.char_density < self.CHAR_DENSITY_THRESHOLD:
+            if page.char_density < self.char_density_threshold:
                 scanned_indicators += 1
-            if page.image_ratio > self.IMAGE_RATIO_THRESHOLD:
+            if page.image_ratio > self.image_ratio_threshold:
                 scanned_indicators += 2
-            if page.char_count < self.CHAR_COUNT_MIN:
+            if page.char_count < self.char_count_min:
                 scanned_indicators += 1
         
         total_pages = len(analyses)
@@ -420,7 +470,7 @@ class TriageAgent:
                     columns = 1
                     prev_x = sorted_x[0]
                     for x in sorted_x[1:]:
-                        if x - prev_x > 100:  # threshold for column separation
+                        if x - prev_x > self.column_gap_threshold:  # configurable threshold
                             columns += 1
                         prev_x = x
                     column_counts.append(min(columns, 4))  # cap at 4 columns
@@ -458,7 +508,7 @@ class TriageAgent:
         native = 0
         
         for page in analyses:
-            if page.char_density < self.CHAR_DENSITY_THRESHOLD:
+            if page.char_density < self.char_density_threshold:
                 scanned += 1
             else:
                 native += 1
@@ -500,13 +550,13 @@ class TriageAgent:
     ) -> float:
         """Calculate overall confidence in the classification."""
         # Base confidence from character density
-        if char_density >= self.CHAR_DENSITY_THRESHOLD:
+        if char_density >= self.char_density_threshold:
             density_score = 1.0
         else:
-            density_score = min(1.0, char_density / self.CHAR_DENSITY_THRESHOLD)
+            density_score = min(1.0, char_density / self.char_density_threshold)
         
         # Low image ratio is good (suggests text-heavy document)
-        if image_ratio <= self.IMAGE_RATIO_THRESHOLD:
+        if image_ratio <= self.image_ratio_threshold:
             image_score = 1.0 - image_ratio
         else:
             image_score = 0.5
@@ -528,18 +578,19 @@ class TriageAgent:
         logger.info(f"Profile saved to: {output_path}")
 
 
-def triage_document(file_path: str, profiles_dir: str = ".refinery/profiles") -> DocumentProfile:
+def triage_document(file_path: str, profiles_dir: str = ".refinery/profiles", config_path: Optional[str] = None) -> DocumentProfile:
     """
     Convenience function to triage a document.
     
     Args:
         file_path: Path to the document
         profiles_dir: Directory to save profiles
+        config_path: Path to configuration file (optional)
         
     Returns:
         DocumentProfile with classification results
     """
-    agent = TriageAgent(profiles_dir)
+    agent = TriageAgent(profiles_dir, config_path)
     result = agent.analyze(file_path)
     return result.profile
 
@@ -562,3 +613,7 @@ if __name__ == "__main__":
     print(f"  Extraction: {profile.extraction_cost_hint}")
     print(f"  Pages: {profile.page_count}")
     print(f"  Confidence: {profile.confidence_score}")
+    if hasattr(profile, 'is_zero_text_document'):
+        print(f"  Zero Text: {profile.is_zero_text_document}")
+    if hasattr(profile, 'is_form_fillable'):
+        print(f"  Form Fillable: {profile.is_form_fillable}")
