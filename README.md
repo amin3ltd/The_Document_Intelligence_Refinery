@@ -116,7 +116,9 @@ page_index = indexer.build_index(ldu_set, profile)
 document-intelligence-refinery/
 ├── src/
 │   ├── models/           # Pydantic data models
+│   │   ├── bbox.py           # Bounding box with geometric operations
 │   │   ├── document_profile.py
+│   │   ├── elements.py       # Element-based result format
 │   │   ├── extracted_document.py
 │   │   ├── ldu.py
 │   │   ├── page_index.py
@@ -124,9 +126,9 @@ document-intelligence-refinery/
 │   ├── agents/          # Pipeline agents
 │   │   ├── triage.py
 │   │   ├── extractor.py
-│   │   ├── chunker.py
-│   │   ├── indexer.py
-│   │   └── query_agent.py
+│   │   ├── chunker.py        # Semantic chunking with ChunkValidator
+│   │   ├── indexer.py        # PageIndex with LLM summaries
+│   │   └── query_agent.py    # LangGraph with 3 tools
 │   ├── strategies/      # Extraction strategies
 │   │   ├── fast_text.py      # Strategy A
 │   │   ├── layout_aware.py   # Strategy B
@@ -135,15 +137,27 @@ document-intelligence-refinery/
 │   │   └── server.py
 │   └── utils/           # Utilities
 │       ├── config.py
+│       ├── data_layer.py    # FactTable, VectorStore, AuditMode
 │       ├── ledger.py
-│       └── ollama_client.py  # Local VLM client
+│       ├── ollama_client.py  # Local VLM client
+│       ├── plugin_system.py # Extensible plugin architecture
+│       ├── rust_bindings.py # Rust performance bindings
+│       └── plugins/          # Plugin implementations
+│           ├── ocr_backend.py
+│           ├── validator.py
+│           └── post_processor.py
+├── rust_ext/            # Rust extensions for performance
+│   ├── Cargo.toml
+│   └── src/lib.rs
 ├── tests/               # Unit tests
 ├── rubric/              # Configuration
 │   └── extraction_rules.yaml
 ├── .refinery/           # Output directories
 │   ├── profiles/        # DocumentProfile JSON
 │   ├── extraction_ledger.jsonl
-│   └── pageindex/
+│   ├── pageindex/
+│   └── fact_tables.db  # SQLite for numerical data
+├── Dockerfile           # Container deployment
 ├── pyproject.toml
 └── README.md
 ```
@@ -209,6 +223,101 @@ REFINERY_VLM_BASE_URL=http://localhost:11434
 
 # Logging
 REFINERY_LOG_LEVEL=INFO
+```
+
+## Plugin System
+
+The refinery supports extensible plugins for custom processing:
+
+```python
+from src.utils.plugins import (
+    get_ocr_backend, OcrBackendType,
+    get_validator,
+    get_post_processor, PostProcessorType
+)
+
+# OCR Backends
+ocr = get_ocr_backend(OcrBackendType.TESSERACT)
+ocr = get_ocr_backend(OcrBackendType.EASYOCR)
+ocr = get_ocr_backend(OcrBackendType.PADDLEOCR)
+
+# Validators
+validator = get_validator("quality")
+validator = get_validator("security")
+
+# Post-processors
+processor = get_post_processor(PostProcessorType.TEXT_CLEANUP)
+processor = get_post_processor(PostProcessorType.LANGUAGE_DETECTION)
+processor = get_post_processor(PostProcessorType.ENTITY_EXTRACTION)
+```
+
+## Data Layer
+
+### FactTable Extraction
+Extract numerical data from documents into SQLite:
+
+```python
+from src.utils.data_layer import FactTableExtractor
+
+extractor = FactTableExtractor(".refinery/fact_tables.db")
+fact_count = extractor.extract_from_ldus(ldu_set)
+facts = extractor.query_facts(doc_id, min_value=100, max_value=1000)
+```
+
+### Vector Store Ingestion
+Store LDUs in ChromaDB or FAISS for semantic search:
+
+```python
+from src.utils.data_layer import VectorStoreIngestion
+
+vector_store = VectorStoreIngestion(backend="chroma")
+# or
+vector_store = VectorStoreIngestion(backend="faiss")
+
+count = vector_store.ingest_ldus(ldu_set)
+```
+
+### Audit Mode
+Verify claims against provenance chain:
+
+```python
+from src.utils.data_layer import AuditMode
+
+audit = AuditMode(provenance_chain)
+claim = audit.verify_claim("The revenue increased by 15%")
+report = audit.create_audit_report(claims)
+```
+
+## Rust Performance Extensions
+
+For high-performance text processing, build the Rust extension:
+
+```bash
+cd rust_ext
+cargo build --release
+```
+
+Python bindings automatically use Rust when available:
+
+```python
+from src.utils.rust_bindings import FastTextProcessor, FastBoundingBox
+
+processor = FastTextProcessor(max_chunk_size=1000)
+chunks = processor.split_into_chunks(text)
+keywords = processor.extract_keywords(texts, top_k=20)
+
+bbox = FastBoundingBox(0, 0, 100, 100)
+iou = bbox.iou(other_bbox)
+```
+
+## Docker Deployment
+
+```bash
+# Build the image
+docker build -t refinery:latest .
+
+# Run the container
+docker run -p 8000:8000 refinery:latest
 ```
 
 ### extraction_rules.yaml
