@@ -1,11 +1,21 @@
 """Models package for the Document Intelligence Refinery."""
 
+from src.models.bbox import BBox
 from src.models.document_profile import (
     DocumentProfile,
     DomainHint,
     ExtractionCostHint,
     LayoutComplexity,
     OriginType,
+)
+from src.models.elements import (
+    Chunk,
+    ContentLayer,
+    Element,
+    ElementMetadata,
+    ElementType,
+    ExtractedImage,
+    PageContent,
 )
 from src.models.extracted_document import (
     ExtractedDocument,
@@ -35,12 +45,22 @@ from src.models.provenance import (
 )
 
 __all__ = [
+    # BBox
+    "BBox",
     # Document Profile
     "DocumentProfile",
     "DomainHint",
     "ExtractionCostHint", 
     "LayoutComplexity",
     "OriginType",
+    # Elements
+    "Chunk",
+    "ContentLayer",
+    "Element",
+    "ElementMetadata",
+    "ElementType",
+    "ExtractedImage",
+    "PageContent",
     # Extracted Document
     "ExtractedDocument",
     "ExtractionMetadata",
