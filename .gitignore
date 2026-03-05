@@ -48,3 +48,4 @@ Thumbs.db
 .refinery/
 B1W3
 helper_files/
+"rust_ext/target/"  
