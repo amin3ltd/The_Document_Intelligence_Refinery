@@ -66,6 +66,8 @@ The API server will start at `http://localhost:8000`
 | `/documents/{doc_id}/chunks` | GET | Get semantic chunks |
 | `/documents/{doc_id}/pageindex` | GET | Get PageIndex tree |
 | `/query` | POST | Query document |
+| `/mcp/tools` | GET | List MCP tools (AI agent integration) |
+| `/mcp/execute` | POST | Execute MCP tool |
 
 ### Example Usage
 
@@ -134,7 +136,8 @@ document-intelligence-refinery/
 │   │   ├── layout_aware.py   # Strategy B
 │   │   └── vision.py         # Strategy C (supports Ollama/LM Studio)
 │   ├── api/             # REST API server
-│   │   └── server.py
+│   │   ├── server.py
+│   │   └── mcp_server.py # MCP server for AI agents
 │   └── utils/           # Utilities
 │       ├── config.py
 │       ├── data_layer.py    # FactTable, VectorStore, AuditMode
@@ -142,6 +145,12 @@ document-intelligence-refinery/
 │       ├── ollama_client.py  # Local VLM client
 │       ├── plugin_system.py # Extensible plugin architecture
 │       ├── rust_bindings.py # Rust performance bindings
+│       ├── stopwords.py # 64 language stopwords + Amharic
+│       ├── text_quality.py # OCR artifact detection
+│       ├── token_reduction.py # CJK & semantic reduction
+│       ├── keyword_extraction.py # YAKE & RAKE algorithms
+│       ├── language_detection.py # Multi-language detection
+│       ├── mcp_server.py # MCP server for AI agents
 │       └── plugins/          # Plugin implementations
 │           ├── ocr_backend.py
 │           ├── validator.py
@@ -249,6 +258,86 @@ validator = get_validator("security")
 processor = get_post_processor(PostProcessorType.TEXT_CLEANUP)
 processor = get_post_processor(PostProcessorType.LANGUAGE_DETECTION)
 processor = get_post_processor(PostProcessorType.ENTITY_EXTRACTION)
+```
+
+## Text Processing Utilities
+
+### Stopwords
+Multi-language stopword filtering for 14+ languages:
+
+```python
+from src.utils.stopwords import Stopwords, get_stopwords, filter_stopwords
+
+# Get stopwords for a language
+stopwords = get_stopwords("en")  # English
+stopwords = get_stopwords("am")  # Amharic
+stopwords = get_stopwords("de")  # German
+
+# Filter stopwords from text
+filtered = filter_stopwords("This is a sample text", "en")
+
+# Check if a word is a stopword
+from src.utils.stopwords import is_stopword
+print(is_stopword("the", "en"))  # True
+```
+
+### Language Detection
+Detect document and page languages:
+
+```python
+from src.utils.language_detection import detect_language, detect_document_languages
+
+# Detect single text language
+lang, confidence = detect_language("This is English text")
+
+# Detect multi-page document languages
+pages = ["Page 1 text", "Page 2 text"]
+result = detect_document_languages(pages)
+```
+
+### Keyword Extraction
+Extract keywords using YAKE or RAKE algorithms:
+
+```python
+from src.utils.keyword_extraction import extract_keywords_yake, extract_keywords_rake
+
+# YAKE keyword extraction
+keywords = extract_keywords_yake("Sample text for keyword extraction", top_n=10)
+
+# RAKE keyword extraction
+keywords = extract_keywords_rake("Sample text for keyword extraction", top_n=10)
+```
+
+### Text Quality Processing
+Assess and clean OCR-generated text:
+
+```python
+from src.utils.text_quality import calculate_quality_score, clean_text, get_quality_report
+
+# Calculate quality score
+score = calculate_quality_score("Sample text")
+print(f"Quality: {score.overall}")  # 0.0 - 1.0
+
+# Clean text with OCR artifacts
+cleaned = clean_text("Text with    multiple   spaces")
+
+# Get detailed quality report
+report = get_quality_report("Sample text")
+```
+
+### Token Reduction
+Reduce token count while preserving meaning:
+
+```python
+from src.utils.token_reduction import reduce_tokens, extract_cjk_keywords
+
+# Reduce tokens (hybrid method)
+result = reduce_tokens("Long text here...", max_tokens=512)
+print(result.reduced_text)
+print(result.reduction_ratio)
+
+# Extract CJK keywords
+keywords = extract_cjk_keywords("中文文本", top_n=10)
 ```
 
 ## Data Layer
