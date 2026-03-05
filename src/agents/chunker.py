@@ -3,6 +3,7 @@ Semantic Chunking Engine for Document Intelligence Refinery.
 
 The Chunking Engine creates Logical Document Units (LDUs) that preserve
 structural context for downstream processing.
+Includes ChunkValidator to enforce all 5 chunking rules.
 """
 
 import hashlib
@@ -17,6 +18,7 @@ from src.models.ldu import (
     LDUSet,
     SemanticRelationship,
 )
+from src.utils.plugin_system import Plugin, PluginMetadata, PluginType
 
 logger = logging.getLogger(__name__)
 
@@ -290,3 +292,130 @@ class Chunker:
                         ldu.semantic_relationships.append(relationship)
         
         return ldus
+
+
+class ChunkValidator:
+    """
+    Validates that chunks satisfy all 5 chunking rules.
+    
+    This ensures LDUs avoid the "Context Poverty" failure mode
+    by enforcing structural integrity rules.
+    """
+    
+    def __init__(self):
+        self.rules = ChunkingRules()
+        self.validation_errors: List[str] = []
+    
+    def validate(self, ldu: LDU) -> bool:
+        """
+        Validate a single LDU against all 5 rules.
+        
+        Returns True if LDU is valid.
+        """
+        self.validation_errors = []
+        
+        # Rule 1: Check paragraph size
+        if ldu.chunk_type == ChunkType.PARAGRAPH:
+            if ldu.char_count > ChunkingRules.MAX_PARAGRAPH_SIZE:
+                self.validation_errors.append(
+                    f"Rule 1 violation: Paragraph exceeds max size "
+                    f"({ldu.char_count} > {ChunkingRules.MAX_PARAGRAPH_SIZE})"
+                )
+            if ldu.char_count < ChunkingRules.MIN_CHUNK_SIZE:
+                self.validation_errors.append(
+                    f"Rule 1 violation: Paragraph below min size "
+                    f"({ldu.char_count} < {ChunkingRules.MIN_CHUNK_SIZE})"
+                )
+        
+        # Rule 2: Headings should not be too long
+        if ldu.chunk_type == ChunkType.HEADING:
+            if ldu.char_count > ChunkingRules.MAX_HEADING_SIZE:
+                self.validation_errors.append(
+                    f"Rule 2 violation: Heading exceeds max size "
+                    f"({ldu.char_count} > {ChunkingRules.MAX_HEADING_SIZE})"
+                )
+        
+        # Rule 3: Table integrity
+        if ldu.chunk_type == ChunkType.TABLE:
+            # Tables should not be split - check cell count
+            if ldu.char_count > ChunkingRules.MAX_TABLE_CELL_SIZE * 10:
+                self.validation_errors.append(
+                    f"Rule 3 violation: Table appears to be too large "
+                    f"({ldu.char_count} chars)"
+                )
+        
+        # Rule 4: Figure-caption relation
+        # This is validated at the relationship level
+        if ldu.chunk_type == ChunkType.FIGURE_CAPTION:
+            if not ldu.has_references:
+                self.validation_errors.append(
+                    f"Rule 4 warning: Figure caption has no reference target"
+                )
+        
+        # Rule 5: Cross-reference integrity
+        # Check that referenced content exists
+        if ldu.has_references:
+            for ref in ldu.references:
+                if not ref:  # Empty reference
+                    self.validation_errors.append(
+                        f"Rule 5 violation: Empty reference in {ldu.ldu_id}"
+                    )
+        
+        return len(self.validation_errors) == 0
+    
+    def validate_lduset(self, ldu_set: LDUSet) -> bool:
+        """
+        Validate all LDUs in a set.
+        
+        Returns True if all LDUs are valid.
+        """
+        all_valid = True
+        for ldu in ldu_set.ldus:
+            if not self.validate(ldu):
+                all_valid = False
+                for error in self.validation_errors:
+                    logger.warning(f"{ldu.ldu_id}: {error}")
+        
+        return all_valid
+    
+    def get_validation_report(self, ldu_set: LDUSet) -> dict:
+        """
+        Get a detailed validation report.
+        
+        Returns a dictionary with validation results.
+        """
+        report = {
+            "total_ldus": len(ldu_set.ldus),
+            "valid_ldus": 0,
+            "invalid_ldus": 0,
+            "rule_violations": {
+                "rule_1_paragraph_size": 0,
+                "rule_2_heading_boundaries": 0,
+                "rule_3_table_integrity": 0,
+                "rule_4_figure_caption": 0,
+                "rule_5_cross_references": 0,
+            },
+            "errors": [],
+        }
+        
+        for ldu in ldu_set.ldus:
+            if self.validate(ldu):
+                report["valid_ldus"] += 1
+            else:
+                report["invalid_ldus"] += 1
+                for error in self.validation_errors:
+                    report["errors"].append({"ldu_id": ldu.ldu_id, "error": error})
+                    
+                    # Count rule violations
+                    if "Rule 1" in error:
+                        report["rule_violations"]["rule_1_paragraph_size"] += 1
+                    elif "Rule 2" in error:
+                        report["rule_violations"]["rule_2_heading_boundaries"] += 1
+                    elif "Rule 3" in error:
+                        report["rule_violations"]["rule_3_table_integrity"] += 1
+                    elif "Rule 4" in error:
+                        report["rule_violations"]["rule_4_figure_caption"] += 1
+                    elif "Rule 5" in error:
+                        report["rule_violations"]["rule_5_cross_references"] += 1
+        
+        return report

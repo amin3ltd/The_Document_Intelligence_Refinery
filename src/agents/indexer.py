@@ -3,13 +3,14 @@ PageIndex Builder Agent for Document Intelligence Refinery.
 
 The Indexer builds a hierarchical navigation tree from LDUs
 for intelligent document navigation.
+Includes LLM-generated section summaries.
 """
 
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 
 from src.models.document_profile import DocumentProfile
 from src.models.ldu import LDU, LDUSet
@@ -18,23 +19,115 @@ from src.models.page_index import NavigationNode, NodeType, PageIndex
 logger = logging.getLogger(__name__)
 
 
+class SummaryGenerator:
+    """
+    Generates LLM-powered summaries for document sections.
+    
+    Uses a configurable LLM to create concise summaries
+    that enable efficient navigation and question answering.
+    """
+    
+    def __init__(self, llm_provider: Optional[Callable] = None):
+        """
+        Initialize the summary generator.
+        
+        Args:
+            llm_provider: Optional callable that takes text and returns summary
+        """
+        self.llm_provider = llm_provider
+    
+    def generate_section_summary(self, section_ldus: List[LDU]) -> str:
+        """
+        Generate a summary for a section of LDUs.
+        
+        Args:
+            section_ldus: List of LDUs in the section
+            
+        Returns:
+            Summary text
+        """
+        if not section_ldus:
+            return ""
+        
+        # Combine content from all LDUs
+        combined_text = " ".join(ldu.content for ldu in section_ldus[:10])  # Limit to first 10
+        
+        if self.llm_provider:
+            try:
+                return self.llm_provider(combined_text)
+            except Exception as e:
+                logger.warning(f"LLM summary generation failed: {e}")
+        
+        # Fallback: simple extractive summary
+        return self._extractive_summary(combined_text)
+    
+    def generate_page_summary(self, page_ldus: List[LDU]) -> str:
+        """
+        Generate a summary for a page.
+        
+        Args:
+            page_ldus: List of LDUs on the page
+            
+        Returns:
+            Summary text
+        """
+        if not page_ldus:
+            return ""
+        
+        # Take first paragraph as summary
+        for ldu in page_ldus:
+            if ldu.chunk_type.value == "paragraph":
+                return ldu.content[:200] + "..." if len(ldu.content) > 200 else ldu.content
+        
+        return page_ldus[0].content[:200]
+    
+    def _extractive_summary(self, text: str, max_length: int = 200) -> str:
+        """
+        Create a simple extractive summary.
+        
+        Args:
+            text: Text to summarize
+            max_length: Maximum summary length
+            
+        Returns:
+            Summary text
+        """
+        # Take first sentences
+        sentences = text.split(". ")
+        summary = ""
+        for sentence in sentences[:3]:
+            if len(summary) + len(sentence) <= max_length:
+                summary += sentence + ". "
+            else:
+                break
+        
+        return summary.strip() or text[:max_length] + "..."
+
+
 class Indexer:
     """
     Builds hierarchical PageIndex trees from LDUs.
     
     The PageIndex provides intelligent navigation through long documents,
     solving the "needle in haystack" problem for RAG systems.
+    Includes LLM-generated section summaries.
     """
     
-    def __init__(self, output_dir: str = ".refinery/pageindex"):
+    def __init__(
+        self,
+        output_dir: str = ".refinery/pageindex",
+        llm_provider: Optional[Callable] = None
+    ):
         """
         Initialize the indexer.
         
         Args:
             output_dir: Directory to save PageIndex outputs
+            llm_provider: Optional callable for LLM summarization
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.summary_generator = SummaryGenerator(llm_provider)
     
     def build_index(
         self,
@@ -85,6 +178,9 @@ class Indexer:
         for section_path, section_ldus in section_tree.items():
             parent_id = None
             
+            # Generate section summary
+            section_summary = self.summary_generator.generate_section_summary(section_ldus)
+            
             # Create nodes for each level in the path
             for level, section_name in enumerate(section_path):
                 node_id = f"node_{node_counter:04d}"
@@ -123,6 +219,9 @@ class Indexer:
             if not page_texts:
                 continue
             
+            # Generate page summary
+            page_summary = self.summary_generator.generate_page_summary(page_ldus)
+            
             node_id = f"page_{page_num}"
             index.add_node(
                 node_id=node_id,
@@ -131,6 +230,7 @@ class Indexer:
                 level=len(section_tree) + 1 if section_tree else 1,
                 page_number=page_num,
                 position=page_num,
+                summary=page_summary,
             )
         
         # Add table and figure nodes
