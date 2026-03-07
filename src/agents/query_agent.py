@@ -110,8 +110,26 @@ class QueryAgent:
         workflow.add_node("structured_query", self._tool_structured_query)
         workflow.add_node("format_response", self._format_response)
         
+        # Add routing node
+        workflow.add_node("route", self._route_question)
+        
         # Define edges - router decides which tool to use
         workflow.add_edge("__start__", "route")
+        workflow.add_conditional_edges(
+            "route",
+            lambda x: x,
+            {
+                "pageindex_navigate": "pageindex_navigate",
+                "semantic_search": "semantic_search",
+                "structured_query": "structured_query",
+            }
+        )
+        
+        # All tools lead to format_response
+        workflow.add_edge("pageindex_navigate", "format_response")
+        workflow.add_edge("semantic_search", "format_response")
+        workflow.add_edge("structured_query", "format_response")
+        workflow.add_edge("format_response", "__end__")
         
         return workflow.compile()
     
