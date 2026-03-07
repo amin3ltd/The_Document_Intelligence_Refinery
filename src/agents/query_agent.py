@@ -42,11 +42,13 @@ class QueryResult:
         sources: List[ProvenanceSource],
         confidence: float,
         page_refs: List[int],
+        tool_used: str = "semantic_search",
     ):
         self.answer = answer
         self.sources = sources
         self.confidence = confidence
         self.page_refs = page_refs
+        self.tool_used = tool_used
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -287,17 +289,21 @@ class QueryAgent:
             result_state = self._tool_pageindex_navigate(initial_state)
         elif mode == "semantic_search":
             result_state = self._tool_semantic_search(initial_state)
+            tool_used = "semantic_search"
         elif mode == "structured_query":
             result_state = self._tool_structured_query(initial_state)
+            tool_used = "structured_query"
         else:
             # Use LangGraph to route automatically
             result_state = self._route_and_execute(initial_state)
+            tool_used = result_state.get("tool_used", "semantic_search")
         
         return QueryResult(
             answer=result_state.get("answer", ""),
             sources=result_state.get("sources", []),
             confidence=result_state.get("confidence", 0.0),
             page_refs=result_state.get("page_refs", []),
+            tool_used=tool_used,
         )
     
     def _route_and_execute(self, state: QueryAgentState) -> QueryAgentState:
@@ -305,13 +311,21 @@ class QueryAgent:
         tool = self._route_question(state)
         
         if tool == "pageindex_navigate":
-            return self._tool_pageindex_navigate(state)
+            result = self._tool_pageindex_navigate(state)
+            result["tool_used"] = "pageindex_navigate"
+            return result
         elif tool == "semantic_search":
-            return self._tool_semantic_search(state)
+            result = self._tool_semantic_search(state)
+            result["tool_used"] = "semantic_search"
+            return result
         elif tool == "structured_query":
-            return self._tool_structured_query(state)
+            result = self._tool_structured_query(state)
+            result["tool_used"] = "structured_query"
+            return result
         
-        return self._tool_semantic_search(state)
+        result = self._tool_semantic_search(state)
+        result["tool_used"] = "semantic_search"
+        return result
     
     def _create_sources_from_ldus(self, ldus: List[LDU]) -> List[ProvenanceSource]:
         """Create ProvenanceSource objects from LDUs."""
