@@ -19,6 +19,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Alert,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -138,6 +139,12 @@ function QueryPage() {
         <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
           Ask questions in natural language and get AI-powered answers with source citations
         </Typography>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
 
         <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
           <FormControl sx={{ minWidth: 250 }}>
