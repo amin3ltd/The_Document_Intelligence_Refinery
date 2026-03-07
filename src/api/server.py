@@ -215,8 +215,15 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Save chunks
         chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
+        # Handle both list of LDU objects and tuples
+        chunks_data = []
+        for c in chunks:
+            if hasattr(c, 'model_dump'):
+                chunks_data.append(c.model_dump())
+            else:
+                chunks_data.append(c)
         with open(chunks_path, "w", encoding="utf-8") as f:
-            f.write(json.dumps([c.model_dump() for c in chunks], indent=2))
+            f.write(json.dumps(chunks_data, indent=2))
         document_status[doc_id].chunking_complete = True
         
         # Stage 4: Indexing
