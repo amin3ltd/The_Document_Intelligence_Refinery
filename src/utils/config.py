@@ -97,6 +97,42 @@ class Config:
             "temperature": 0.0,
         },
         
+        # Safety limits for VLM extraction - all configurable from UI
+        "safety_limits": {
+            # Context and tokens
+            "max_context_tokens": 4096,
+            
+            # Temperature bounds
+            "temperature_min": 0.0,
+            "temperature_max": 0.3,
+            "temperature_default": 0.1,
+            
+            # Resource protection
+            "max_memory_mb": 2048,
+            "max_image_size_mb": 50,
+            "max_pages_per_batch": 5,
+            
+            # Timeouts (seconds)
+            "request_timeout": 120.0,
+            "page_process_timeout": 60.0,
+            "total_timeout": 600.0,
+            
+            # Retry configuration
+            "max_retries": 3,
+            "base_retry_delay": 1.0,
+            "max_retry_delay": 30.0,
+            "exponential_base": 2.0,
+            
+            # CPU protection
+            "cpu_throttle_threshold": 80.0,
+            "cpu_pause_threshold": 95.0,
+            "health_check_interval": 5,
+            
+            # Document limits
+            "max_pages_total": 500,
+            "max_document_size_mb": 100,
+        },
+        
         # Domain keywords for classification - easily extendable
         "domains": {
             "financial": {
@@ -281,6 +317,24 @@ class Config:
     def budget_config(self) -> Dict[str, Any]:
         """Get budget configuration for Vision strategy."""
         return self.get("extraction.budget", {})
+    
+    @property
+    def safety_limits_config(self) -> Dict[str, Any]:
+        """Get safety limits configuration - all configurable from UI."""
+        return self.get("safety_limits", {})
+    
+    def get_safety_limit(self, key: str, default: Any = None) -> Any:
+        """Get a specific safety limit value."""
+        return self.get(f"safety_limits.{key}", default)
+    
+    def set_safety_limit(self, key: str, value: Any) -> None:
+        """Set a specific safety limit value."""
+        self.set(f"safety_limits.{key}", value)
+    
+    def update_safety_limits(self, limits: Dict[str, Any]) -> None:
+        """Update multiple safety limits at once."""
+        for key, value in limits.items():
+            self.set(f"safety_limits.{key}", value)
     
     def get_strategy_thresholds(self, strategy: str) -> Dict[str, Any]:
         """Get thresholds for a specific extraction strategy."""
