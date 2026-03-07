@@ -361,9 +361,18 @@ def create_query_agent(
     with open(ldu_file) as f:
         ldu_data = json.load(f)
     
-    # Handle both full LDUSet format and simple dict format
-    if "ldus" in ldu_data and isinstance(ldu_data.get("ldus"), list):
-        # Convert plain dicts to LDU objects
+    # Handle various JSON formats
+    if isinstance(ldu_data, list):
+        # JSON is a list of LDU dicts - convert directly
+        ldus = [LDU(**ldu_dict) for ldu_dict in ldu_data]
+        ldu_set = LDUSet(
+            doc_id=doc_id,
+            ldus=ldus,
+            chunking_strategy="unknown",
+            processing_time_ms=0,
+        )
+    elif "ldus" in ldu_data and isinstance(ldu_data.get("ldus"), list):
+        # JSON has dict with "ldus" key - convert to LDU objects
         ldus = [LDU(**ldu_dict) for ldu_dict in ldu_data["ldus"]]
         ldu_set = LDUSet(
             doc_id=ldu_data["doc_id"],
@@ -373,6 +382,7 @@ def create_query_agent(
             content_hash=ldu_data.get("content_hash"),
         )
     else:
+        # Try as full LDUSet format
         ldu_set = LDUSet(**ldu_data)
     
     # Load PageIndex
