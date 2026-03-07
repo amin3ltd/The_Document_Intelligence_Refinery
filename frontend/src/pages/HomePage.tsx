@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -22,6 +22,7 @@ import {
   Security as SecurityIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import { documentApi, healthApi } from '../services/api';
 
 const features = [
   {
@@ -50,16 +51,70 @@ const features = [
   },
 ];
 
-const stats = [
-  { label: 'Documents Processed', value: '1,247', icon: <AnalyticsIcon /> },
-  { label: 'Pages Extracted', value: '45,892', icon: <UploadIcon /> },
-  { label: 'Queries Answered', value: '8,934', icon: <QueryIcon /> },
-  { label: 'Accuracy Rate', value: '98.5%', icon: <AIIcon /> },
-];
-
 function HomePage() {
   const theme = useTheme();
   const navigate = useNavigate();
+  const [stats, setStats] = useState([
+    { label: 'Documents Processed', value: '0', icon: <AnalyticsIcon /> },
+    { label: 'Pages Extracted', value: '0', icon: <UploadIcon /> },
+    { label: 'Queries Answered', value: '0', icon: <QueryIcon /> },
+    { label: 'Accuracy Rate', value: '0%', icon: <AIIcon /> },
+  ]);
+  const [recentDocs, setRecentDocs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  const loadStats = async () => {
+    try {
+      const docs = await documentApi.list();
+      const docCount = docs.documents?.length || 0;
+      
+      // Calculate stats from actual documents
+      let totalPages = 0;
+      let completedDocs = 0;
+      const recent = [];
+      
+      for (const doc of (docs.documents || []).slice(0, 5)) {
+        try {
+          const status = await documentApi.getStatus(doc.id);
+          totalPages += status.profile?.page_count || 0;
+          if (status.status === 'completed') {
+            completedDocs++;
+          }
+          recent.push({
+            name: doc.name,
+            status: status.status,
+            pages: status.profile?.page_count || 0,
+          });
+        } catch (e) {
+          recent.push({
+            name: doc.name,
+            status: 'unknown',
+            pages: 0,
+          });
+        }
+      }
+      
+      setRecentDocs(recent);
+      
+      // Calculate accuracy based on completed docs
+      const accuracy = docCount > 0 ? Math.round((completedDocs / docCount) * 100) : 0;
+      
+      setStats([
+        { label: 'Documents Processed', value: docCount.toLocaleString(), icon: <AnalyticsIcon /> },
+        { label: 'Pages Extracted', value: totalPages.toLocaleString(), icon: <UploadIcon /> },
+        { label: 'Queries Answered', value: '0', icon: <QueryIcon /> },
+        { label: 'Success Rate', value: `${accuracy}%`, icon: <AIIcon /> },
+      ]);
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Box>
@@ -219,43 +274,59 @@ function HomePage() {
 
       <Box sx={{ mt: 5 }}>
         <Typography variant="h4" fontWeight="600" sx={{ mb: 3 }}>
-          Recent Activity
+          Recent Documents
         </Typography>
-        <Card
-          sx={{
-            background: alpha(theme.palette.background.paper, 0.6),
-            backdropFilter: 'blur(10px)',
-            border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-          }}
-        >
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <HistoryIcon color="primary" />
-              <Typography variant="h6">Processing Queue</Typography>
-            </Box>
-            <Box sx={{ mb: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body2">current_document.pdf</Typography>
-                <Typography variant="body2" color="primary">75%</Typography>
-              </Box>
-              <LinearProgress 
-                variant="determinate" 
-                value={75} 
-                sx={{ 
-                  height: 8, 
-                  borderRadius: 4,
-                  bgcolor: alpha(theme.palette.primary.main, 0.1),
-                  '& .MuiLinearProgress-bar': {
-                    background: `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                  }
-                }} 
-              />
-            </Box>
-            <Typography variant="body2" color="text.secondary">
-              Using Strategy B (Docling) - Complex layout detected
+        {loading ? (
+          <LinearProgress />
+        ) : recentDocs.length > 0 ? (
+          <Card
+            sx={{
+              background: alpha(theme.palette.background.paper, 0.6),
+              backdropFilter: 'blur(10px)',
+              border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+            }}
+          >
+            <CardContent>
+              {recentDocs.map((doc, index) => (
+                <Box key={index} sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2">{doc.name}</Typography>
+                    <Chip 
+                      size="small" 
+                      label={doc.status} 
+                      color={doc.status === 'completed' ? 'success' : doc.status === 'processing' ? 'warning' : 'default'} 
+                    />
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">
+                    {doc.pages} pages
+                  </Typography>
+                </Box>
+              ))}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card
+            sx={{
+              background: alpha(theme.palette.background.paper, 0.6),
+              backdropFilter: 'blur(10px)',
+              border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+              p: 3,
+              textAlign: 'center',
+            }}
+          >
+            <Typography variant="body1" color="text.secondary">
+              No documents uploaded yet. Upload a document to get started.
             </Typography>
-          </CardContent>
-        </Card>
+            <Button 
+              variant="contained" 
+              startIcon={<UploadIcon />}
+              onClick={() => navigate('/upload')}
+              sx={{ mt: 2 }}
+            >
+              Upload Document
+            </Button>
+          </Card>
+        )}
       </Box>
     </Box>
   );
