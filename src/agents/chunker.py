@@ -158,14 +158,21 @@ class Chunker:
         ldu_counter: int,
     ) -> LDU:
         """Create an LDU from a text block."""
-        text = block.get("text", "")
-        bbox = block.get("bbox")
+        # Handle both dict and TextBlock objects
+        if hasattr(block, 'get'):
+            # It's a dict
+            text = block.get("text", "")
+            bbox = block.get("bbox")
+        else:
+            # It's a TextBlock object
+            text = block.text if hasattr(block, 'text') else ""
+            bbox = block.bbox if hasattr(block, 'bbox') else None
         
         word_count = len(text.split())
         char_count = len(text)
         
         # Determine chunk type
-        chunk_type = self._detect_chunk_type(text, block)
+        chunk_type = self._detect_chunk_type(text)
         
         # Generate content hash
         content_hash = hashlib.sha256(text.encode()).hexdigest()
@@ -219,7 +226,7 @@ class Chunker:
             content_hash=hashlib.sha256(text.encode()).hexdigest(),
         )
     
-    def _detect_chunk_type(self, text: str, block: dict) -> ChunkType:
+    def _detect_chunk_type(self, text: str) -> ChunkType:
         """Detect the chunk type based on text content."""
         # Simple heuristics for chunk type detection
         lines = text.split("\n")
