@@ -234,7 +234,9 @@ async def process_document(doc_id: str, file_path: Path):
         logger.info(f"Document {doc_id} processing complete")
         
     except Exception as e:
+        import traceback
         logger.error(f"Error processing document {doc_id}: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         document_status[doc_id].status = "failed"
         document_status[doc_id].error = str(e)
 
