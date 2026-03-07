@@ -173,12 +173,12 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Stage 1: Triage
         logger.info(f"[{doc_id}] Stage 1: Triage")
-        profile = triage_agent.analyze(str(file_path))
+        triage_result = triage_agent.analyze(str(file_path))
+        profile = triage_result.profile  # DocumentProfile from TriageResult
         document_status[doc_id].profile = profile
         
         # Save profile
         profile_path = PROFILES_DIR / f"{doc_id}.json"
-        profile.model_dump_json()
         with open(profile_path, "w") as f:
             f.write(profile.model_dump_json())
         

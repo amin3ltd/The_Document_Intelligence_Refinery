@@ -20,6 +20,7 @@ import {
   Select,
   MenuItem,
   Alert,
+  IconButton,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -28,6 +29,7 @@ import {
   Source as SourceIcon,
   CheckCircle as VerifyIcon,
   Warning as WarningIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { queryApi, documentApi } from '../services/api';
@@ -71,6 +73,25 @@ function QueryPage() {
     } catch (err) {
       console.error('Failed to load documents:', err);
       setError('Could not load documents. Make sure the API server is running.');
+    }
+  };
+
+  const handleDeleteDocument = async (docId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
+      return;
+    }
+    try {
+      await documentApi.delete(docId);
+      // Refresh the document list
+      await loadDocuments();
+      // Reset selection if the deleted document was selected
+      if (selectedDoc === docId) {
+        setSelectedDoc('all');
+      }
+    } catch (err) {
+      console.error('Failed to delete document:', err);
+      setError('Failed to delete document.');
     }
   };
 
@@ -146,7 +167,7 @@ function QueryPage() {
           </Alert>
         )}
 
-        <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+        <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center' }}>
           <FormControl sx={{ minWidth: 250 }}>
             <InputLabel>Select Document</InputLabel>
             <Select
@@ -156,8 +177,17 @@ function QueryPage() {
             >
               <MenuItem value="all">All Documents</MenuItem>
               {documents.map((doc: {id: string; name: string}) => (
-                <MenuItem key={doc.id} value={doc.id}>
-                  {doc.name}
+                <MenuItem key={doc.id} value={doc.id} sx={{ justifyContent: 'space-between' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <span>{doc.name}</span>
+                    <IconButton
+                      size="small"
+                      onClick={(e) => handleDeleteDocument(doc.id, e)}
+                      sx={{ ml: 1 }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
                 </MenuItem>
               ))}
             </Select>
