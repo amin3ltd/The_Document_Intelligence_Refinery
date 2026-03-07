@@ -345,6 +345,69 @@ async def query_document(request: QueryRequest) -> QueryResponse:
     )
 
 
+@app.delete("/api/documents/{doc_id}")
+async def delete_document(doc_id: str):
+    """Delete a document and all its associated files"""
+    deleted_files = []
+    errors = []
+    
+    # Check if document exists (at least one file)
+    profile_path = PROFILES_DIR / f"{doc_id}.json"
+    if not profile_path.exists():
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    # Files to delete
+    files_to_delete = [
+        profile_path,
+        EXTRACTIONS_DIR / f"{doc_id}_extraction.json",
+        EXTRACTIONS_DIR / f"{doc_id}_chunks.json",
+        PAGEINDEX_DIR / f"{doc_id}_pageindex.json",
+    ]
+    
+    # Also delete the original uploaded file (we need to find it)
+    for ext in ["*.pdf", "*.docx", "*.doc", "*.txt", "*.png", "*.jpg", "*.jpeg"]:
+        for file_path in EXTRACTIONS_DIR.glob(f"{doc_id}_{ext}"):
+            files_to_delete.append(file_path)
+    
+    # Delete all files
+    for file_path in files_to_delete:
+        try:
+            if file_path.exists():
+                file_path.unlink()
+                deleted_files.append(str(file_path))
+        except Exception as e:
+            errors.append(f"Failed to delete {file_path}: {str(e)}")
+    
+    # Remove from ledger (rewrite ledger without this doc_id)
+    try:
+        ledger_path = Path(".refinery/extraction_ledger/extraction_ledger.jsonl")
+        if ledger_path.exists():
+            with open(ledger_path, "r") as f:
+                lines = f.readlines()
+            
+            # Filter out entries for this doc_id
+            filtered_lines = [
+                line for line in lines 
+                if doc_id not in json.loads(line).get("doc_id", "")
+            ]
+            
+            with open(ledger_path, "w") as f:
+                f.writelines(filtered_lines)
+    except Exception as e:
+        errors.append(f"Failed to update ledger: {str(e)}")
+    
+    # Remove from in-memory status
+    if doc_id in document_status:
+        del document_status[doc_id]
+    
+    return {
+        "success": len(errors) == 0,
+        "doc_id": doc_id,
+        "deleted_files": deleted_files,
+        "errors": errors,
+    }
+
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint with system health information"""

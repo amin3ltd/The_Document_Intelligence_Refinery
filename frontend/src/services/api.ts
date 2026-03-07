@@ -61,6 +61,11 @@ export const documentApi = {
     const response = await api.get('/api/documents');
     return response.data;
   },
+
+  delete: async (documentId: string) => {
+    const response = await api.delete(`/api/documents/${documentId}`);
+    return response.data;
+  },
 };
 
 // Query API
