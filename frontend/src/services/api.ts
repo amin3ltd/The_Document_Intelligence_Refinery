@@ -87,4 +87,25 @@ export const settingsApi = {
   },
 };
 
+// Health Check API
+export const healthApi = {
+  check: async () => {
+    const response = await api.get('/api/health');
+    return response.data;
+  },
+};
+
+// Safety Limits API
+export const safetyLimitsApi = {
+  get: async () => {
+    const response = await api.get('/api/config/safety-limits');
+    return response.data;
+  },
+
+  update: async (limits: Record<string, number>) => {
+    const response = await api.put('/api/config/safety-limits', limits);
+    return response.data;
+  },
+};
+
 export default api;
