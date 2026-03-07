@@ -360,7 +360,20 @@ def create_query_agent(
     # Load LDUs
     with open(ldu_file) as f:
         ldu_data = json.load(f)
-    ldu_set = LDUSet(**ldu_data)
+    
+    # Handle both full LDUSet format and simple dict format
+    if "ldus" in ldu_data and isinstance(ldu_data.get("ldus"), list):
+        # Convert plain dicts to LDU objects
+        ldus = [LDU(**ldu_dict) for ldu_dict in ldu_data["ldus"]]
+        ldu_set = LDUSet(
+            doc_id=ldu_data["doc_id"],
+            ldus=ldus,
+            chunking_strategy=ldu_data.get("chunking_strategy", "unknown"),
+            processing_time_ms=ldu_data.get("processing_time_ms", 0),
+            content_hash=ldu_data.get("content_hash"),
+        )
+    else:
+        ldu_set = LDUSet(**ldu_data)
     
     # Load PageIndex
     with open(index_file) as f:
