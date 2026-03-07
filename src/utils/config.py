@@ -92,8 +92,8 @@ class Config:
         
         # VLM settings
         "vlm": {
-            "provider": "openai",
-            "model": "gpt-4o",
+            "provider": "lmstudio",
+            "model": "llava-1.6-mistral-7b",
             "temperature": 0.0,
         },
         
