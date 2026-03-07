@@ -215,13 +215,26 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Save chunks
         chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
-        # Handle both list of LDU objects and tuples
+        # Handle chunker output - could be list of LDU, list of tuples, or list of dicts
         chunks_data = []
         for c in chunks:
             if hasattr(c, 'model_dump'):
+                # It's an LDU object
                 chunks_data.append(c.model_dump())
-            else:
+            elif isinstance(c, tuple):
+                # It's a tuple - try to convert first element if it's an LDU
+                if len(c) > 0 and hasattr(c[0], 'model_dump'):
+                    chunks_data.append(c[0].model_dump())
+                else:
+                    chunks_data.append(list(c) if not isinstance(c, list) else c)
+            elif isinstance(c, dict):
                 chunks_data.append(c)
+            else:
+                # Try to convert to list
+                try:
+                    chunks_data.append(list(c))
+                except:
+                    chunks_data.append(str(c))
         with open(chunks_path, "w", encoding="utf-8") as f:
             f.write(json.dumps(chunks_data, indent=2))
         document_status[doc_id].chunking_complete = True
