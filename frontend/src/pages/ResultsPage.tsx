@@ -20,6 +20,7 @@ import {
   TableRow,
   LinearProgress,
   Alert,
+  Grid,
 } from '@mui/material';
 import {
   Download as DownloadIcon,
@@ -27,8 +28,10 @@ import {
   TableChart as TableIcon,
   TextFields as TextIcon,
   Image as ImageIcon,
+  CheckCircle as CheckCircleIcon,
   CheckCircle as VerifyIcon,
   Warning as WarningIcon,
+  Assessment as ProfileIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { documentApi } from '../services/api';
@@ -56,6 +59,7 @@ function ResultsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
 
   useEffect(() => {
     if (id) {
@@ -69,6 +73,7 @@ function ResultsPage() {
     try {
       const status = await documentApi.getStatus(docId);
       const data = await documentApi.getResults(docId);
+      setProfile(status.profile);
       setResults({
         metadata: {
           filename: status.profile?.filename || docId,
@@ -180,6 +185,7 @@ function ResultsPage() {
             <Tab icon={<TextIcon />} label="Text" iconPosition="start" />
             <Tab icon={<TableIcon />} label="Tables" iconPosition="start" />
             <Tab icon={<ImageIcon />} label="Figures" iconPosition="start" />
+            <Tab icon={<ProfileIcon />} label="Profile" iconPosition="start" />
           </Tabs>
 
           <CardContent>
@@ -299,6 +305,179 @@ function ResultsPage() {
                   </Card>
                 ))}
               </Box>
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={3}>
+              <Grid container spacing={3}>
+                {/* Document Classification */}
+                <Grid item xs={12} md={6}>
+                  <Typography variant="h6" fontWeight="600" sx={{ mb: 2 }}>
+                    Document Classification
+                  </Typography>
+                  <Card sx={{ bgcolor: alpha(theme.palette.background.default, 0.5) }}>
+                    <CardContent>
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" color="text.secondary">Origin Type</Typography>
+                        <Chip 
+                          label={profile?.origin_type || 'Unknown'} 
+                          color="primary" 
+                          sx={{ mt: 0.5 }}
+                        />
+                      </Box>
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" color="text.secondary">Layout Complexity</Typography>
+                        <Chip 
+                          label={profile?.layout_complexity || 'Unknown'} 
+                          color="secondary" 
+                          sx={{ mt: 0.5 }}
+                        />
+                      </Box>
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" color="text.secondary">Domain Hint</Typography>
+                        <Chip 
+                          label={profile?.domain_hint || 'Unknown'} 
+                          color="info" 
+                          sx={{ mt: 0.5 }}
+                        />
+                      </Box>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">Extraction Cost Hint</Typography>
+                        <Chip 
+                          label={profile?.extraction_cost_hint || 'Unknown'} 
+                          color="warning" 
+                          sx={{ mt: 0.5 }}
+                        />
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* Language & Metrics */}
+                <Grid item xs={12} md={6}>
+                  <Typography variant="h6" fontWeight="600" sx={{ mb: 2 }}>
+                    Language & Metrics
+                  </Typography>
+                  <Card sx={{ bgcolor: alpha(theme.palette.background.default, 0.5) }}>
+                    <CardContent>
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" color="text.secondary">Language</Typography>
+                        <Typography variant="h6">{profile?.language || 'Unknown'}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Confidence: {((profile?.language_confidence || 0) * 100).toFixed(1)}%
+                        </Typography>
+                      </Box>
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" color="text.secondary">Character Density (avg)</Typography>
+                        <Typography variant="h6">{(profile?.char_density_avg || 0).toFixed(3)}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">Image Ratio (avg)</Typography>
+                        <Typography variant="h6">{((profile?.image_ratio_avg || 0) * 100).toFixed(1)}%</Typography>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* Page Statistics */}
+                <Grid item xs={12} md={6}>
+                  <Typography variant="h6" fontWeight="600" sx={{ mb: 2 }}>
+                    Page Statistics
+                  </Typography>
+                  <Card sx={{ bgcolor: alpha(theme.palette.background.default, 0.5) }}>
+                    <CardContent>
+                      <TableContainer>
+                        <Table size="small">
+                          <TableBody>
+                            <TableRow>
+                              <TableCell>Total Pages</TableCell>
+                              <TableCell align="right"><strong>{profile?.page_count || 0}</strong></TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell>Native Digital Pages</TableCell>
+                              <TableCell align="right">{profile?.estimated_pages_native || 0}</TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell>Scanned Pages</TableCell>
+                              <TableCell align="right">{profile?.estimated_pages_scanned || 0}</TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell>Zero-Text Pages</TableCell>
+                              <TableCell align="right">{profile?.zero_text_page_count || 0}</TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell>Form Fillable Pages</TableCell>
+                              <TableCell align="right">{profile?.form_fillable_page_count || 0}</TableCell>
+                            </TableRow>
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* Content Detection */}
+                <Grid item xs={12} md={6}>
+                  <Typography variant="h6" fontWeight="600" sx={{ mb: 2 }}>
+                    Content Detection
+                  </Typography>
+                  <Card sx={{ bgcolor: alpha(theme.palette.background.default, 0.5) }}>
+                    <CardContent>
+                      <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip 
+                          icon={profile?.has_tables ? <CheckCircleIcon /> : <WarningIcon />}
+                          label={profile?.has_tables ? 'Tables Detected' : 'No Tables'} 
+                          color={profile?.has_tables ? 'success' : 'default'}
+                        />
+                      </Box>
+                      <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip 
+                          icon={profile?.has_figures ? <CheckCircleIcon /> : <WarningIcon />}
+                          label={profile?.has_figures ? 'Figures Detected' : 'No Figures'} 
+                          color={profile?.has_figures ? 'success' : 'default'}
+                        />
+                      </Box>
+                      <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip 
+                          icon={profile?.is_zero_text_document ? <WarningIcon /> : <CheckCircleIcon />}
+                          label={profile?.is_zero_text_document ? 'Zero-Text Document' : 'Has Text Content'} 
+                          color={profile?.is_zero_text_document ? 'warning' : 'success'}
+                        />
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip 
+                          icon={profile?.is_form_fillable ? <CheckCircleIcon /> : <WarningIcon />}
+                          label={profile?.is_form_fillable ? 'Form Fillable' : 'Not Form Fillable'} 
+                          color={profile?.is_form_fillable ? 'info' : 'default'}
+                        />
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* Confidence Score */}
+                <Grid item xs={12}>
+                  <Typography variant="h6" fontWeight="600" sx={{ mb: 2 }}>
+                    Classification Confidence
+                  </Typography>
+                  <Card sx={{ bgcolor: alpha(theme.palette.background.default, 0.5) }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Box sx={{ flex: 1 }}>
+                          <LinearProgress 
+                            variant="determinate" 
+                            value={(profile?.confidence_score || 0) * 100} 
+                            color={(profile?.confidence_score || 0) > 0.8 ? 'success' : (profile?.confidence_score || 0) > 0.5 ? 'warning' : 'error'}
+                            sx={{ height: 10, borderRadius: 5 }}
+                          />
+                        </Box>
+                        <Typography variant="h5" fontWeight="bold">
+                          {((profile?.confidence_score || 0) * 100).toFixed(1)}%
+                        </Typography>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
             </TabPanel>
           </CardContent>
         </Card>
