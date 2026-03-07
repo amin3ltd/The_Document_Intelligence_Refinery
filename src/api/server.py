@@ -211,49 +211,24 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Stage 3: Chunking
         logger.info(f"[{doc_id}] Stage 3: Chunking")
-        chunks = chunker_engine.chunk(extracted_doc, profile)
+        ldu_set = chunker_engine.chunk(extracted_doc, profile)
         
-        # Save chunks
+        # Save chunks - from LDUSet.ldus
         chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
-        # Handle chunker output - convert to serializable format
+        # Convert LDU objects to serializable format
         chunks_data = []
-        for item in chunks:
-            # Handle nested structures (list of lists, etc.)
-            if isinstance(item, list):
-                inner_data = []
-                for inner_item in item:
-                    if hasattr(inner_item, 'model_dump'):
-                        inner_data.append(inner_item.model_dump())
-                    elif isinstance(inner_item, dict):
-                        inner_data.append(inner_item)
-                    else:
-                        inner_data.append(str(inner_item))
-                chunks_data.append(inner_data)
-            elif hasattr(item, 'model_dump'):
-                # It's an LDU object
-                chunks_data.append(item.model_dump())
-            elif isinstance(item, dict):
-                chunks_data.append(item)
-            elif isinstance(item, (list, tuple)):
-                # Convert tuple/list to list and process
-                processed = []
-                for sub_item in item:
-                    if hasattr(sub_item, 'model_dump'):
-                        processed.append(sub_item.model_dump())
-                    elif isinstance(sub_item, dict):
-                        processed.append(sub_item)
-                    else:
-                        processed.append(str(sub_item))
-                chunks_data.append(processed)
+        for ldu in ldu_set.ldus:
+            if hasattr(ldu, 'model_dump'):
+                chunks_data.append(ldu.model_dump())
             else:
-                chunks_data.append(str(item))
+                chunks_data.append(str(ldu))
         with open(chunks_path, "w", encoding="utf-8") as f:
             f.write(json.dumps(chunks_data, indent=2))
         document_status[doc_id].chunking_complete = True
         
         # Stage 4: Indexing
         logger.info(f"[{doc_id}] Stage 4: Indexing")
-        page_index = indexer.build_pageindex(extracted_doc, chunks)
+        page_index = indexer.build_index(ldu_set, profile)
         
         # Save PageIndex
         index_path = PAGEINDEX_DIR / f"{doc_id}_pageindex.json"
