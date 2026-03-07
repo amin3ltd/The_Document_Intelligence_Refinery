@@ -211,7 +211,7 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Stage 3: Chunking
         logger.info(f"[{doc_id}] Stage 3: Chunking")
-        chunks = chunker_engine.chunk(extracted_doc)
+        chunks = chunker_engine.chunk(extracted_doc, profile)
         
         # Save chunks
         chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
