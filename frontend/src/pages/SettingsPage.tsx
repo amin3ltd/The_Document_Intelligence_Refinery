@@ -54,6 +54,7 @@ function SettingsPage() {
     dbPath: './data/refinery.db',
   });
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [healthData, setHealthData] = useState<any>(null);
   const [loadingHealth, setLoadingHealth] = useState(false);
   const [safetyLimits, setSafetyLimits] = useState<any>({
@@ -80,11 +81,13 @@ function SettingsPage() {
 
   const fetchHealth = async () => {
     setLoadingHealth(true);
+    setError(null);
     try {
       const data = await healthApi.check();
       setHealthData(data);
     } catch (error) {
       console.error('Failed to fetch health:', error);
+      setError('Failed to connect to API. Make sure the backend server is running.');
     } finally {
       setLoadingHealth(false);
     }
@@ -97,6 +100,7 @@ function SettingsPage() {
       setSafetyLimits(data);
     } catch (error) {
       console.error('Failed to fetch safety limits:', error);
+      setError('Failed to load safety limits configuration.');
     } finally {
       setLoadingLimits(false);
     }
@@ -141,6 +145,12 @@ function SettingsPage() {
             sx={{ mb: 3 }}
           >
             Settings saved successfully!
+          </Alert>
+        )}
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {error}
           </Alert>
         )}
 
