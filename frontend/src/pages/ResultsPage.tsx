@@ -47,46 +47,6 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
-const mockResults = {
-  metadata: {
-    filename: 'sample_document.pdf',
-    pages: 12,
-    strategy: 'Strategy B - Docling',
-    processingTime: '45.2s',
-    confidence: 0.95,
-  },
-  text: `This is a sample extracted text from the document. The Document Intelligence Refinery
-  has successfully processed this PDF using advanced layout-aware extraction techniques.
-
-  The system detected multiple columns, tables, and figures throughout the document.
-  Text quality analysis indicates high accuracy with minimal OCR artifacts.
-
-  Key findings:
-  - Revenue increased by 23% in Q4
-  - New market expansion in East Africa
-  - Partnership with local distributors`,
-  tables: [
-    {
-      caption: 'Financial Summary 2024',
-      rows: [
-        { metric: 'Revenue', q1: '$1.2M', q2: '$1.4M', q3: '$1.6M', q4: '$2.1M' },
-        { metric: 'Costs', q1: '$800K', q2: '$850K', q3: '$900K', q4: '$950K' },
-        { metric: 'Profit', q1: '$400K', q2: '$550K', q3: '$700K', q4: '$1.15M' },
-      ],
-    },
-  ],
-  figures: [
-    { page: 3, caption: 'Market Growth Chart', type: 'chart' },
-    { page: 7, caption: 'Regional Distribution Map', type: 'image' },
-  ],
-  entities: [
-    { type: 'ORG', value: 'Acme Corporation', confidence: 0.98 },
-    { type: 'DATE', value: 'Q4 2024', confidence: 0.99 },
-    { type: 'MONEY', value: '$2.1M', confidence: 0.97 },
-    { type: 'PERCENT', value: '23%', confidence: 0.96 },
-  ],
-};
-
 function ResultsPage() {
   const { id } = useParams();
   const theme = useTheme();
