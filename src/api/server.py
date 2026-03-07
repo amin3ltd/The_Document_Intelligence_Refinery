@@ -271,6 +271,44 @@ async def list_documents():
 async def get_document_status(doc_id: str) -> DocumentStatus:
     """Get processing status of a document"""
     if doc_id not in document_status:
+        # Try to load from disk if not in memory
+        # Try multiple ID formats: full ID, with doc_ prefix, and UUID only
+        profile_path = PROFILES_DIR / f"{doc_id}.json"
+        if not profile_path.exists():
+            # Try with doc_ prefix if not already present
+            if not doc_id.startswith("doc_"):
+                profile_path = PROFILES_DIR / f"doc_{doc_id}.json"
+            else:
+                # Extract UUID from doc_xxx_filename_hash format (e.g., doc_uuid_filename_hash)
+                parts = doc_id.replace("doc_", "").split("_")
+                if len(parts) >= 1:
+                    # Get the first part which should be the UUID
+                    uuid_part = parts[0]
+                    profile_path = PROFILES_DIR / f"{uuid_part}.json"
+        
+        if profile_path.exists():
+            with open(profile_path, "r") as f:
+                profile_data = json.load(f)
+            profile = DocumentProfile(**profile_data)
+            
+            # Check what processing stages are complete based on files on disk
+            # Extract base UUID from the doc_id or profile
+            doc_id_for_files = doc_id.replace("doc_", "").split("_")[0] if doc_id.startswith("doc_") else doc_id
+            if "_" in doc_id_for_files:
+                doc_id_for_files = doc_id_for_files.split("_")[0]
+            
+            extraction_complete = (PROFILES_DIR / f"{doc_id_for_files}_extraction.json").exists()
+            chunking_complete = (PROFILES_DIR / f"{doc_id_for_files}_chunks.json").exists()
+            indexing_complete = (PROFILES_DIR / f"{doc_id}_index.json").exists() or (PROFILES_DIR / f"{doc_id_for_files}_pageindex.json").exists()
+            
+            return DocumentStatus(
+                doc_id=doc_id,
+                status="completed",
+                profile=profile,
+                extraction_complete=extraction_complete,
+                chunking_complete=chunking_complete,
+                indexing_complete=indexing_complete
+            )
         raise HTTPException(status_code=404, detail="Document not found")
     return document_status[doc_id]
 
