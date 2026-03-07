@@ -163,10 +163,16 @@ class Chunker:
             # It's a dict
             text = block.get("text", "")
             bbox = block.get("bbox")
+            page_num = int(page_num) if page_num else 1
         else:
             # It's a TextBlock object
             text = block.text if hasattr(block, 'text') else ""
             bbox = block.bbox if hasattr(block, 'bbox') else None
+            # Ensure page_number is at least 1
+            if hasattr(block, 'page_number'):
+                page_num = max(1, int(block.page_number) if block.page_number else 1)
+            else:
+                page_num = max(1, int(page_num) if page_num else 1)
         
         word_count = len(text.split())
         char_count = len(text)
