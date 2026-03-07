@@ -10,6 +10,9 @@ Features:
 - Hard caps that halt or degrade processing
 - Confidence metadata attachment
 - Table/figure preservation
+- CPU/Memory protection
+- Request timeout and retry logic
+- Circuit breaker pattern
 
 Supports:
 - OpenAI GPT-4o
@@ -28,6 +31,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from enum import Enum
+from threading import Lock
 
 import fitz  # PyMuPDF
 from PIL import Image
@@ -41,6 +45,7 @@ from src.models.extracted_document import (
     TableData,
 )
 from src.utils.config import get_config
+from src.utils.system_check import get_health_checker
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +101,119 @@ class BudgetState:
         }
 
 
+class CircuitBreakerState(str, Enum):
+    """Circuit breaker states."""
+    CLOSED = "closed"      # Normal operation
+    OPEN = "open"         # Failing, reject requests
+    HALF_OPEN = "half_open"  # Testing if service recovered
+
+
+@dataclass
+class CircuitBreaker:
+    """Circuit breaker for failing services."""
+    failure_threshold: int = 5      # Failures before opening
+    success_threshold: int = 2      # Successes to close from half-open
+    timeout_seconds: float = 30.0   # Time before trying half-open
+    _failures: int = 0
+    _successes: int = 0
+    state: CircuitBreakerState = CircuitBreakerState.CLOSED
+    _last_failure_time: float = 0
+    _lock: Lock = field(default_factory=Lock)
+    
+    def record_success(self) -> None:
+        """Record a successful call."""
+        with self._lock:
+            if self.state == CircuitBreakerState.HALF_OPEN:
+                self._successes += 1
+                if self._successes >= self.success_threshold:
+                    self.state = CircuitBreakerState.CLOSED
+                    self._failures = 0
+                    self._successes = 0
+                    logger.info("Circuit breaker closed")
+            else:
+                self._failures = 0
+    
+    def record_failure(self) -> None:
+        """Record a failed call."""
+        with self._lock:
+            self._failures += 1
+            self._last_failure_time = time.time()
+            
+            if self.state == CircuitBreakerState.HALF_OPEN:
+                self.state = CircuitBreakerState.OPEN
+                self._successes = 0
+                logger.warning("Circuit breaker opened after half-open failure")
+            elif self._failures >= self.failure_threshold:
+                self.state = CircuitBreakerState.OPEN
+                logger.warning(f"Circuit breaker opened after {self._failures} failures")
+    
+    def can_execute(self) -> bool:
+        """Check if a request can be executed."""
+        with self._lock:
+            if self.state == CircuitBreakerState.CLOSED:
+                return True
+            
+            if self.state == CircuitBreakerState.OPEN:
+                # Check if timeout has passed
+                if time.time() - self._last_failure_time >= self.timeout_seconds:
+                    self.state = CircuitBreakerState.HALF_OPEN
+                    self._successes = 0
+                    logger.info("Circuit breaker half-open, testing...")
+                    return True
+                return False
+            
+            # Half-open - allow one request
+            return True
+
+
+@dataclass
+class SafetyLimits:
+    """Safety limits for VLM extraction."""
+    max_context_tokens: int = 4096          # Maximum context window
+    temperature_min: float = 0.0             # Minimum temperature
+    temperature_max: float = 0.3             # Maximum temperature for extraction
+    temperature_default: float = 0.1        # Default temperature
+    
+    # Resource protection
+    max_memory_mb: int = 2048                # Max memory per document (MB)
+    max_image_size_mb: int = 50              # Max image file size (MB)
+    max_pages_per_batch: int = 5             # Pages to process per batch
+    
+    # Timeouts (seconds)
+    request_timeout: float = 120.0           # VLM request timeout
+    page_process_timeout: float = 60.0       # Per-page timeout
+    total_timeout: float = 600.0             # Total extraction timeout
+    
+    # Retry configuration
+    max_retries: int = 3                    # Max retry attempts
+    base_retry_delay: float = 1.0            # Base delay between retries
+    max_retry_delay: float = 30.0           # Max delay between retries
+    exponential_base: float = 2.0           # Exponential backoff base
+    
+    # CPU protection
+    cpu_throttle_threshold: float = 80.0    # CPU % to start throttling
+    cpu_pause_threshold: float = 95.0      # CPU % to pause processing
+    health_check_interval: int = 5          # Check health every N pages
+    
+    # Memory limits for documents
+    max_pages_total: int = 500              # Absolute max pages
+    max_document_size_mb: int = 100         # Max document size
+
+
+def get_safe_temperature(temperature: Optional[float], limits: SafetyLimits) -> float:
+    """Get a safe temperature value within bounds."""
+    if temperature is None:
+        return limits.temperature_default
+    
+    return max(limits.temperature_min, min(limits.temperature_max, temperature))
+
+
+def calculate_retry_delay(attempt: int, limits: SafetyLimits) -> float:
+    """Calculate exponential backoff delay."""
+    delay = limits.base_retry_delay * (limits.exponential_base ** attempt)
+    return min(delay, limits.max_retry_delay)
+
+
 class VisionStrategy:
     """
     Vision-augmented extraction using VLM with budget accounting.
@@ -135,6 +253,7 @@ class VisionStrategy:
         api_key: Optional[str] = None,
         base_url: str = "http://localhost:11434",
         config_path: Optional[str] = None,
+        safety_limits: Optional[SafetyLimits] = None,
     ):
         """
         Initialize the strategy.
@@ -145,14 +264,55 @@ class VisionStrategy:
             api_key: API key for the provider (optional for local)
             base_url: Base URL for local providers
             config_path: Path to configuration file
+            safety_limits: Optional safety limits configuration
         """
         self.provider = provider
         self.model = model
         self.api_key = api_key
         self.base_url = base_url
         self.config = get_config(config_path)
+        
+        # Initialize safety limits - load from config if not provided
+        if safety_limits is not None:
+            self.safety_limits = safety_limits
+        else:
+            # Load from config - all configurable from UI
+            limits_config = self.config.safety_limits_config
+            self.safety_limits = SafetyLimits(
+                max_context_tokens=limits_config.get("max_context_tokens", 4096),
+                temperature_min=limits_config.get("temperature_min", 0.0),
+                temperature_max=limits_config.get("temperature_max", 0.3),
+                temperature_default=limits_config.get("temperature_default", 0.1),
+                max_memory_mb=limits_config.get("max_memory_mb", 2048),
+                max_image_size_mb=limits_config.get("max_image_size_mb", 50),
+                max_pages_per_batch=limits_config.get("max_pages_per_batch", 5),
+                request_timeout=limits_config.get("request_timeout", 120.0),
+                page_process_timeout=limits_config.get("page_process_timeout", 60.0),
+                total_timeout=limits_config.get("total_timeout", 600.0),
+                max_retries=limits_config.get("max_retries", 3),
+                base_retry_delay=limits_config.get("base_retry_delay", 1.0),
+                max_retry_delay=limits_config.get("max_retry_delay", 30.0),
+                exponential_base=limits_config.get("exponential_base", 2.0),
+                cpu_throttle_threshold=limits_config.get("cpu_throttle_threshold", 80.0),
+                cpu_pause_threshold=limits_config.get("cpu_pause_threshold", 95.0),
+                health_check_interval=limits_config.get("health_check_interval", 5),
+                max_pages_total=limits_config.get("max_pages_total", 500),
+                max_document_size_mb=limits_config.get("max_document_size_mb", 100),
+            )
+        
+        # Initialize circuit breaker for this provider
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=5,
+            success_threshold=2,
+            timeout_seconds=30.0,
+        )
+        
+        # Get health checker
+        self._health_checker = get_health_checker()
+        
         self._client = None
         self._budget: Optional[BudgetState] = None
+        self._throttle_until: float = 0  # Timestamp to wait until
     
     def _get_client(self):
         """Get or initialize the VLM client."""
@@ -211,9 +371,89 @@ class VisionStrategy:
             degrade_on_overrun=budget_config.get("degrade_on_overrun", True),
         )
     
+    def _check_system_health(self) -> Tuple[bool, Optional[str]]:
+        """
+        Check system health and return (ok, warning_message).
+        
+        Returns:
+            Tuple of (system_ok, warning_message)
+        """
+        try:
+            health = self._health_checker.check_system()
+            
+            # Check for critical resources
+            for resource in health.resources:
+                if resource.status == "critical":
+                    return False, f"Critical {resource.name}: {resource.value:.1f}{resource.unit}"
+                elif resource.status == "warning":
+                    logger.warning(f"High {resource.name}: {resource.value:.1f}{resource.unit}")
+            
+            # Check for missing required packages
+            missing = [p.name for p in health.required_packages if not p.installed]
+            if missing:
+                return False, f"Missing required packages: {missing}"
+            
+            return True, None
+            
+        except Exception as e:
+            logger.warning(f"Health check failed: {e}")
+            # Don't block on health check failures
+            return True, None
+    
+    def _apply_cpu_throttle(self) -> None:
+        """
+        Apply CPU throttling if system is overloaded.
+        Sleeps if CPU is above threshold.
+        """
+        if time.time() < self._throttle_until:
+            # Currently throttling
+            sleep_time = self._throttle_until - time.time()
+            logger.info(f"Throttling for {sleep_time:.1f}s due to high CPU")
+            time.sleep(min(sleep_time, 5.0))  # Cap sleep at 5 seconds
+            return
+        
+        try:
+            health = self._health_checker.check_system()
+            
+            for resource in health.resources:
+                if resource.name == "cpu_percent" and resource.status != "ok":
+                    if resource.value >= self.safety_limits.cpu_pause_threshold:
+                        # High CPU - pause for longer
+                        self._throttle_until = time.time() + 10.0
+                        logger.warning(f"High CPU ({resource.value:.1f}%), pausing extraction")
+                    elif resource.value >= self.safety_limits.cpu_throttle_threshold:
+                        # Moderate CPU - throttle
+                        self._throttle_until = time.time() + 2.0
+                        logger.info(f"Elevated CPU ({resource.value:.1f}%), throttling")
+        except Exception as e:
+            logger.debug(f"CPU throttle check failed: {e}")
+    
+    def _wait_for_resources(self, timeout: float = 30.0) -> bool:
+        """
+        Wait for system resources to become available.
+        
+        Args:
+            timeout: Maximum time to wait in seconds
+            
+        Returns:
+            True if resources available, False if timeout
+        """
+        start = time.time()
+        while time.time() - start < timeout:
+            self._apply_cpu_throttle()
+            
+            ok, warning = self._check_system_health()
+            if ok:
+                return True
+            
+            time.sleep(1.0)
+        
+        logger.warning("Resource wait timeout")
+        return False
+    
     def extract(self, file_path: str, profile: DocumentProfile) -> ExtractedDocument:
         """
-        Extract text using VLM with budget accounting.
+        Extract text using VLM with budget accounting and safety checks.
         
         Args:
             file_path: Path to the document (PDF or image)
@@ -224,20 +464,37 @@ class VisionStrategy:
         """
         start_time = time.time()
         
+        # Safety check: Check total timeout
+        if time.time() - start_time > self.safety_limits.total_timeout:
+            logger.warning("Total extraction timeout exceeded, using fallback")
+            return self._fallback_extract(file_path, profile, start_time)
+        
+        # Safety check: Check circuit breaker
+        if not self.circuit_breaker.can_execute():
+            logger.warning(f"Circuit breaker is {self.circuit_breaker.state.value}, falling back")
+            return self._fallback_extract(file_path, profile, start_time)
+        
         # Initialize budget tracking
         self._budget = self._init_budget(profile)
+        
+        # Apply safety limits to budget
+        self._budget.max_pages = min(
+            self._budget.max_pages,
+            self.safety_limits.max_pages_total
+        )
         
         logger.info(
             f"Starting VLM extraction for {file_path} using {self.provider}/{self.model} "
             f"(budget: ${self._budget.max_cost}, {self._budget.max_pages} pages)"
         )
         
-        # Try VLM extraction with budget checks
+        # Try VLM extraction with budget checks and safety
         try:
             if self._get_client():
                 return self._extract_with_vlm(file_path, profile, start_time)
         except Exception as e:
             logger.warning(f"VLM extraction failed: {e}")
+            self.circuit_breaker.record_failure()
         
         # Fallback to layout-aware strategy
         logger.info("Falling back to layout-aware extraction")
@@ -313,6 +570,22 @@ Respond ONLY with valid JSON."""
                     logger.error(f"Budget exceeded, halting at page {page_num}")
                     break
             
+            # Periodic health check
+            if page_num % self.safety_limits.health_check_interval == 0:
+                self._apply_cpu_throttle()
+                ok, health_warning = self._check_system_health()
+                if not ok:
+                    logger.warning(f"Health check failed: {health_warning}")
+                    # Try waiting for resources
+                    if not self._wait_for_resources(timeout=30.0):
+                        logger.warning("Resources not available, degrading")
+                        break
+            
+            # Check total timeout
+            if time.time() - start_time > self.safety_limits.total_timeout:
+                logger.warning("Total timeout reached, stopping processing")
+                break
+            
             logger.info(f"Processing page {page_num}/{len(images)} (budget: ${self._budget.current_cost:.2f})")
             
             try:
@@ -320,14 +593,43 @@ Respond ONLY with valid JSON."""
                 temp_img_path = f".refinery/temp_page_{page_num}.png"
                 image.save(temp_img_path)
                 
-                if self.provider in ("ollama", "lmstudio"):
-                    result = self._extract_with_ollama(temp_img_path, extraction_prompt)
-                elif self.provider == "openai":
-                    result = self._extract_with_openai(temp_img_path, extraction_prompt)
-                elif self.provider == "google":
-                    result = self._extract_with_google(temp_img_path, extraction_prompt)
-                else:
-                    result = {}
+                # Extract with retry logic
+                result = None
+                last_error = None
+                
+                for attempt in range(self.safety_limits.max_retries):
+                    try:
+                        if self.provider in ("ollama", "lmstudio"):
+                            result = self._extract_with_ollama(temp_img_path, extraction_prompt)
+                        elif self.provider == "openai":
+                            result = self._extract_with_openai(temp_img_path, extraction_prompt)
+                        elif self.provider == "google":
+                            result = self._extract_with_google(temp_img_path, extraction_prompt)
+                        else:
+                            result = {}
+                        
+                        # Success
+                        if result:
+                            break
+                            
+                    except Exception as e:
+                        last_error = e
+                        if attempt < self.safety_limits.max_retries - 1:
+                            delay = calculate_retry_delay(attempt, self.safety_limits)
+                            logger.warning(f"Page {page_num} attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s")
+                            time.sleep(delay)
+                        else:
+                            logger.error(f"Page {page_num} failed after {self.safety_limits.max_retries} attempts: {e}")
+                
+                if result is None:
+                    # All retries failed
+                    logger.warning(f"Failed to extract page {page_num} after retries")
+                    self.circuit_breaker.record_failure()
+                    # Continue to next page
+                    Path(temp_img_path).unlink(missing_ok=True)
+                    continue
+                
+                self.circuit_breaker.record_success()
                 
                 # Parse result
                 parsed = json.loads(result) if isinstance(result, str) else result
@@ -407,20 +709,25 @@ Respond ONLY with valid JSON."""
         )
     
     def _extract_with_ollama(self, image_path: str, prompt: str) -> str:
-        """Extract using Ollama or LM Studio."""
+        """Extract using Ollama or LM Studio with timeout and safety."""
         client = self._get_client()
         
         if hasattr(client, 'extract_from_image'):
             return client.extract_from_image(image_path, prompt)
         else:
-            # Direct API call
+            # Direct API call with timeout
             import httpx
             
             # Encode image
             with open(image_path, "rb") as f:
                 img_b64 = base64.b64encode(f.read()).decode("utf-8")
             
-            client = httpx.Client(base_url=self.base_url, timeout=120)
+            # Use safety limits for timeout
+            timeout = self.safety_limits.request_timeout
+            client = httpx.Client(base_url=self.base_url, timeout=timeout)
+            
+            # Get safe temperature
+            temperature = get_safe_temperature(0.1, self.safety_limits)
             
             # Prepare message with image
             content = [
@@ -431,18 +738,34 @@ Respond ONLY with valid JSON."""
             response = client.post("/api/chat", json={
                 "model": self.model,
                 "messages": [{"role": "user", "content": content}],
-                "stream": False
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                }
             })
             
             return response.json().get("message", {}).get("content", "{}")
     
     def _extract_with_openai(self, image_path: str, prompt: str) -> str:
-        """Extract using OpenAI GPT-4o."""
-        client = self._get_client()
+        """Extract using OpenAI GPT-4o with safety bounds."""
+        import httpx
+        
+        # Check file size
+        file_size = Path(image_path).stat().st_size / (1024 * 1024)  # MB
+        if file_size > self.safety_limits.max_image_size_mb:
+            raise ValueError(f"Image too large: {file_size:.1f}MB > {self.safety_limits.max_image_size_mb}MB")
         
         # Encode image
         with open(image_path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode("utf-8")
+        
+        # Use safe temperature within bounds
+        temperature = get_safe_temperature(0.1, self.safety_limits)
+        
+        # Use context limit
+        max_tokens = min(self.safety_limits.max_context_tokens, 4096)
+        
+        client = self._get_client()
         
         response = client.chat.completions.create(
             model=self.model,
@@ -455,20 +778,37 @@ Respond ONLY with valid JSON."""
                     ]
                 }
             ],
-            max_tokens=4096
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=self.safety_limits.request_timeout,
         )
         
         return response.choices[0].message.content
     
     def _extract_with_google(self, image_path: str, prompt: str) -> str:
-        """Extract using Google Gemini."""
+        """Extract using Google Gemini with safety bounds."""
         client = self._get_client()
+        
+        # Check file size
+        file_size = Path(image_path).stat().st_size / (1024 * 1024)  # MB
+        if file_size > self.safety_limits.max_image_size_mb:
+            raise ValueError(f"Image too large: {file_size:.1f}MB > {self.safety_limits.max_image_size_mb}MB")
         
         # Load image
         img = Image.open(image_path)
         
+        # Use safe temperature
+        temperature = get_safe_temperature(0.1, self.safety_limits)
+        
         model = client.GenerativeModel(self.model)
-        response = model.generate_content([prompt, img])
+        
+        # Configure generation with safety settings
+        generation_config = {
+            "temperature": temperature,
+            "max_output_tokens": min(self.safety_limits.max_context_tokens, 4096),
+        }
+        
+        response = model.generate_content([prompt, img], generation_config=generation_config)
         
         return response.text
     
@@ -493,7 +833,7 @@ Respond ONLY with valid JSON."""
     
     def _convert_to_images(self, file_path: str) -> List[Image.Image]:
         """
-        Convert PDF or image file to list of PIL Images.
+        Convert PDF or image file to list of PIL Images with memory protection.
         
         Args:
             file_path: Path to PDF or image file
@@ -504,14 +844,33 @@ Respond ONLY with valid JSON."""
         path = Path(file_path)
         images = []
         
+        # Check file size
+        file_size_mb = path.stat().st_size / (1024 * 1024)
+        if file_size_mb > self.safety_limits.max_document_size_mb:
+            logger.warning(f"Document too large: {file_size_mb:.1f}MB > {self.safety_limits.max_document_size_mb}MB")
+            return []
+        
         try:
             if path.suffix.lower() == ".pdf":
                 # Convert PDF to images
                 doc = fitz.open(file_path)
-                for page_num in range(len(doc)):
+                total_pages = len(doc)
+                
+                # Check page count limit
+                if total_pages > self.safety_limits.max_pages_total:
+                    logger.warning(f"Too many pages: {total_pages} > {self.safety_limits.max_pages_total}")
+                    doc.close()
+                    return []
+                
+                for page_num in range(total_pages):
+                    # Check memory before processing each page
+                    if len(images) * 10 > self.safety_limits.max_memory_mb:  # Estimate ~10MB per image
+                        logger.warning("Memory limit reached, truncating document")
+                        break
+                    
                     page = doc[page_num]
-                    # Render page to image
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x for better quality
+                    # Render page to image at 2x for quality, but check memory
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                     img_data = pix.tobytes("png")
                     img = Image.open(io.BytesIO(img_data))
                     images.append(img)
@@ -519,10 +878,23 @@ Respond ONLY with valid JSON."""
                 
             else:
                 # Single image file
+                # Check image size
                 img = Image.open(file_path)
+                
                 # Convert to RGB if needed
                 if img.mode != "RGB":
                     img = img.convert("RGB")
+                
+                # Check dimensions
+                width, height = img.size
+                max_dim = 4096  # Max dimension to prevent huge images
+                if width > max_dim or height > max_dim:
+                    # Resize if too large
+                    ratio = min(max_dim / width, max_dim / height)
+                    new_size = (int(width * ratio), int(height * ratio))
+                    img = img.resize(new_size, Image.LANCZOS)
+                    logger.info(f"Resized image from {width}x{height} to {new_size[0]}x{new_size[1]}")
+                
                 images.append(img)
                 
         except Exception as e:
@@ -547,3 +919,30 @@ Respond ONLY with valid JSON."""
             "remaining": self._budget.get_remaining_budget(),
             "warnings": self._budget.warnings,
         }
+    
+    def get_safety_status(self) -> Dict[str, any]:
+        """Get current safety status including circuit breaker and health."""
+        health = self._health_checker.check_system()
+        
+        return {
+            "circuit_breaker": {
+                "state": self.circuit_breaker.state.value,
+                "failures": self.circuit_breaker._failures,
+            },
+            "safety_limits": {
+                "max_context_tokens": self.safety_limits.max_context_tokens,
+                "temperature_range": [
+                    self.safety_limits.temperature_min,
+                    self.safety_limits.temperature_max,
+                ],
+                "request_timeout": self.safety_limits.request_timeout,
+                "max_retries": self.safety_limits.max_retries,
+            },
+            "system_health": health.get_summary(),
+            "throttle_active": time.time() < self._throttle_until,
+        }
+    
+    def reset_circuit_breaker(self) -> None:
+        """Manually reset the circuit breaker."""
+        self.circuit_breaker = CircuitBreaker()
+        logger.info("Circuit breaker manually reset")
