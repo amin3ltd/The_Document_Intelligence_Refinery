@@ -195,7 +195,7 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Save profile
         profile_path = PROFILES_DIR / f"{doc_id}.json"
-        with open(profile_path, "w") as f:
+        with open(profile_path, "w", encoding="utf-8") as f:
             f.write(profile.model_dump_json())
         
         # Stage 2: Extraction
@@ -205,7 +205,7 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Save extraction
         extraction_path = EXTRACTIONS_DIR / f"{doc_id}_extraction.json"
-        with open(extraction_path, "w") as f:
+        with open(extraction_path, "w", encoding="utf-8") as f:
             f.write(extracted_doc.model_dump_json())
         document_status[doc_id].extraction_complete = True
         
@@ -215,7 +215,7 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Save chunks
         chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
-        with open(chunks_path, "w") as f:
+        with open(chunks_path, "w", encoding="utf-8") as f:
             f.write(json.dumps([c.model_dump() for c in chunks], indent=2))
         document_status[doc_id].chunking_complete = True
         
@@ -225,7 +225,7 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Save PageIndex
         index_path = PAGEINDEX_DIR / f"{doc_id}_pageindex.json"
-        with open(index_path, "w") as f:
+        with open(index_path, "w", encoding="utf-8") as f:
             f.write(page_index.model_dump_json())
         document_status[doc_id].indexing_complete = True
         
