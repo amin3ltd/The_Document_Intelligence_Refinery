@@ -299,7 +299,7 @@ class VectorStoreIngestion:
                     "ldu_id": ldu.ldu_id,
                     "content": ldu.content,
                     "page_number": ldu.page_number,
-                    "chunk_type": ldu.chunk_type.value,
+                    "chunk_type": ldu.chunk_type,
                     "keywords": list(set(ldu.content.lower().split()))
                 }
                 for ldu in ldu_set.ldus
@@ -338,7 +338,7 @@ class VectorStoreIngestion:
             metadatas=[
                 {
                     "page_number": ldu.page_number,
-                    "chunk_type": ldu.chunk_type.value,
+                    "chunk_type": ldu.chunk_type,
                     "doc_id": ldu.doc_id
                 }
                 for ldu in ldu_set.ldus
@@ -379,7 +379,7 @@ class VectorStoreIngestion:
                 "ldu_id": ldu.ldu_id,
                 "content": ldu.content,
                 "page_number": ldu.page_number,
-                "chunk_type": ldu.chunk_type.value
+                "chunk_type": ldu.chunk_type
             }
             for ldu in ldu_set.ldus
         ]
