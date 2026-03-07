@@ -288,7 +288,11 @@ class TriageAgent:
         # Save the profile
         self._save_profile(profile)
         
-        logger.info(f"Triage complete: {origin_type.value}, {layout_complexity.value}, {domain_hint.value}")
+        origin_type_val = origin_type.value if hasattr(origin_type, 'value') else origin_type
+        layout_complexity_val = layout_complexity.value if hasattr(layout_complexity, 'value') else layout_complexity
+        domain_hint_val = domain_hint.value if hasattr(domain_hint, 'value') else domain_hint
+        
+        logger.info(f"Triage complete: {origin_type_val}, {layout_complexity_val}, {domain_hint_val}")
         
         return TriageResult(
             profile=profile,
