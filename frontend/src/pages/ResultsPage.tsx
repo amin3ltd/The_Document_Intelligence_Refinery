@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Box,
@@ -18,6 +18,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  LinearProgress,
 } from '@mui/material';
 import {
   Download as DownloadIcon,
@@ -26,8 +27,10 @@ import {
   TextFields as TextIcon,
   Image as ImageIcon,
   CheckCircle as VerifyIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import { documentApi } from '../services/api';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -89,11 +92,49 @@ function ResultsPage() {
   const theme = useTheme();
   const [tabValue, setTabValue] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<any>(null);
+
+  useEffect(() => {
+    if (id) {
+      loadResults(id);
+    }
+  }, [id]);
+
+  const loadResults = async (docId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const status = await documentApi.getStatus(docId);
+      const data = await documentApi.getResults(docId);
+      setResults({
+        metadata: {
+          filename: status.profile?.filename || docId,
+          pages: status.profile?.page_count || 0,
+          strategy: status.profile?.extraction_strategy || 'Unknown',
+          processingTime: 'N/A',
+          confidence: status.profile?.confidence_score || 0,
+        },
+        text: data.text || '',
+        tables: data.tables || [],
+        figures: data.figures || [],
+        entities: data.entities || [],
+      });
+    } catch (err) {
+      console.error('Failed to load results:', err);
+      setError('Failed to load document results. Make sure the API server is running.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(mockResults.text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (results?.text) {
+      navigator.clipboard.writeText(results.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
@@ -109,7 +150,7 @@ function ResultsPage() {
               Extraction Results
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              {mockResults.metadata.filename}
+              {results?.metadata?.filename || 'No document selected'}
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
@@ -135,21 +176,21 @@ function ResultsPage() {
         <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
           <Chip
             icon={<TableIcon />}
-            label={`${mockResults.metadata.pages} Pages`}
+            label={`${results?.metadata?.pages || 0} Pages`}
             variant="outlined"
           />
           <Chip
-            label={mockResults.metadata.strategy}
+            label={results?.metadata?.strategy || 'Unknown'}
             variant="outlined"
             color="primary"
           />
           <Chip
-            label={`${mockResults.metadata.processingTime}`}
+            label={results?.metadata?.processingTime || 'N/A'}
             variant="outlined"
           />
           <Chip
             icon={<VerifyIcon />}
-            label={`${(mockResults.metadata.confidence * 100).toFixed(0)}% Confidence`}
+            label={`${((results?.metadata?.confidence || 0) * 100).toFixed(0)}% Confidence`}
             color="success"
             variant="outlined"
           />
@@ -187,7 +228,7 @@ function ResultsPage() {
                   lineHeight: 1.8,
                 }}
               >
-                {mockResults.text}
+                {results?.text || 'No text extracted yet.'}
               </Box>
               <Divider sx={{ my: 3 }} />
               <Typography variant="h6" fontWeight="600" sx={{ mb: 2 }}>
@@ -203,7 +244,7 @@ function ResultsPage() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {mockResults.entities.map((entity, index) => (
+                    {(results?.entities || []).map((entity: any, index: number) => (
                       <TableRow key={index}>
                         <TableCell>
                           <Chip
@@ -230,7 +271,7 @@ function ResultsPage() {
             </TabPanel>
 
             <TabPanel value={tabValue} index={1}>
-              {mockResults.tables.map((table, index) => (
+              {(results?.tables || []).map((table: any, index: number) => (
                 <Box key={index} sx={{ mb: 3 }}>
                   <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
                     {table.caption}
@@ -247,7 +288,7 @@ function ResultsPage() {
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {table.rows.map((row, rowIndex) => (
+                        {table.rows.map((row: any, rowIndex: number) => (
                           <TableRow key={rowIndex}>
                             <TableCell sx={{ fontWeight: 600 }}>{row.metric}</TableCell>
                             <TableCell>{row.q1}</TableCell>
@@ -265,7 +306,7 @@ function ResultsPage() {
 
             <TabPanel value={tabValue} index={2}>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 2 }}>
-                {mockResults.figures.map((figure, index) => (
+                {(results?.figures || []).map((figure: any, index: number) => (
                   <Card
                     key={index}
                     sx={{
