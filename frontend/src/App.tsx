@@ -2,7 +2,7 @@ import React from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline, Box } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import DashboardLayout from './components/DashboardLayout';
 import HomePage from './pages/HomePage';
 import UploadPage from './pages/UploadPage';
@@ -103,6 +103,7 @@ function App() {
               <Route path="/" element={<DashboardLayout />}>
                 <Route index element={<HomePage />} />
                 <Route path="upload" element={<UploadPage />} />
+                <Route path="results" element={<Navigate to="/" replace />} />
                 <Route path="results/:id" element={<ResultsPage />} />
                 <Route path="query" element={<QueryPage />} />
                 <Route path="settings" element={<SettingsPage />} />
