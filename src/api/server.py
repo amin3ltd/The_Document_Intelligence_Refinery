@@ -75,10 +75,17 @@ PAGEINDEX_DIR.mkdir(parents=True, exist_ok=True)
 # Global instances
 triage_agent = TriageAgent()
 extraction_router = ExtractionRouter()
-# Register extraction strategies
+# Get config for VLM settings
+config = get_config()
+vlm_config = config.get("vlm", {})
+# Register extraction strategies with proper VLM configuration
 extraction_router.register_strategy(FastTextStrategy())
 extraction_router.register_strategy(LayoutAwareStrategy())
-extraction_router.register_strategy(VisionStrategy())
+extraction_router.register_strategy(VisionStrategy(
+    provider=vlm_config.get("provider", "lmstudio"),
+    model=vlm_config.get("model", "llava-1.6-mistral-7b"),
+    base_url=vlm_config.get("base_url", "http://localhost:1234")
+))
 chunker_engine = Chunker()
 indexer = Indexer()
 ledger = ExtractionLedger()
