@@ -232,7 +232,7 @@ async def list_documents():
             status = document_status.get(doc_id, DocumentStatus(doc_id=doc_id, status="unknown"))
             documents.append({
                 "id": doc_id,
-                "name": status.profile.filename if status.profile else profile_file.name,
+                "name": Path(status.profile.file_path).name if status.profile and status.profile.file_path else profile_file.name,
                 "status": status.status,
             })
     return {"documents": documents}
