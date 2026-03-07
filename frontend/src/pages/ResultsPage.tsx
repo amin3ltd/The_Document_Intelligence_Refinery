@@ -19,6 +19,7 @@ import {
   TableHead,
   TableRow,
   LinearProgress,
+  Alert,
 } from '@mui/material';
 import {
   Download as DownloadIcon,
@@ -104,6 +105,11 @@ function ResultsPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {error}
+          </Alert>
+        )}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Box>
             <Typography variant="h4" fontWeight="600">
