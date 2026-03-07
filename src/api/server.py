@@ -298,6 +298,18 @@ async def query_document(request: QueryRequest) -> QueryResponse:
     # Load document data
     doc_id = request.doc_id
     
+    # If no specific document, try to query across all documents
+    if not doc_id or doc_id == "":
+        # Get all document profiles
+        all_profiles = list(PROFILES_DIR.glob("*.json"))
+        
+        if not all_profiles:
+            raise HTTPException(status_code=404, detail="No documents found. Upload a document first.")
+        
+        # Load the first available document for now
+        # In a full implementation, this would query across all documents
+        doc_id = all_profiles[0].stem
+    
     # Check if document exists
     profile_path = PROFILES_DIR / f"{doc_id}.json"
     if not profile_path.exists():
