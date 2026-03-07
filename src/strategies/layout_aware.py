@@ -215,7 +215,7 @@ class LayoutAwareStrategy:
             full_text=full_text,
             metadata=metadata,
             language=profile.language,
-            domain_hint=profile.domain_hint.value if profile.domain_hint else None,
+            domain_hint=profile.domain_hint if profile.domain_hint else None,
         )
         
         logger.info(
