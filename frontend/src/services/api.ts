@@ -39,7 +39,7 @@ export const documentApi = {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('strategy', strategy);
-    const response = await api.post('/documents/upload', formData, {
+    const response = await api.post('/api/documents/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -48,17 +48,17 @@ export const documentApi = {
   },
 
   getStatus: async (documentId: string) => {
-    const response = await api.get(`/documents/${documentId}/status`);
+    const response = await api.get(`/api/documents/${documentId}/status`);
     return response.data;
   },
 
   getResults: async (documentId: string) => {
-    const response = await api.get(`/documents/${documentId}/results`);
+    const response = await api.get(`/api/documents/${documentId}/results`);
     return response.data;
   },
 
   list: async () => {
-    const response = await api.get('/documents');
+    const response = await api.get('/api/documents');
     return response.data;
   },
 };
@@ -66,7 +66,7 @@ export const documentApi = {
 // Query API
 export const queryApi = {
   ask: async (question: string, docId: string = '') => {
-    const response = await api.post('/query', {
+    const response = await api.post('/api/query', {
       question,
       doc_id: docId,
     });
@@ -77,12 +77,12 @@ export const queryApi = {
 // Settings API
 export const settingsApi = {
   get: async () => {
-    const response = await api.get('/settings');
+    const response = await api.get('/api/settings');
     return response.data;
   },
 
   update: async (settings: Record<string, unknown>) => {
-    const response = await api.put('/settings', settings);
+    const response = await api.put('/api/settings', settings);
     return response.data;
   },
 };
@@ -90,7 +90,7 @@ export const settingsApi = {
 // Health Check API
 export const healthApi = {
   check: async () => {
-    const response = await api.get('/health');
+    const response = await api.get('/api/health');
     return response.data;
   },
 };
@@ -98,12 +98,12 @@ export const healthApi = {
 // Safety Limits API
 export const safetyLimitsApi = {
   get: async () => {
-    const response = await api.get('/config/safety-limits');
+    const response = await api.get('/api/config/safety-limits');
     return response.data;
   },
 
   update: async (limits: Record<string, number>) => {
-    const response = await api.put('/config/safety-limits', limits);
+    const response = await api.put('/api/config/safety-limits', limits);
     return response.data;
   },
 };
