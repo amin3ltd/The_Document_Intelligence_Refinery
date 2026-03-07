@@ -11,6 +11,7 @@ import {
   alpha,
   Chip,
   LinearProgress,
+  Alert,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -62,12 +63,14 @@ function HomePage() {
   ]);
   const [recentDocs, setRecentDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadStats();
   }, []);
 
   const loadStats = async () => {
+    setError(null);
     try {
       const docs = await documentApi.list();
       const docCount = docs.documents?.length || 0;
@@ -111,6 +114,7 @@ function HomePage() {
       ]);
     } catch (error) {
       console.error('Failed to load stats:', error);
+      setError('Failed to connect to API. Make sure the backend server is running on port 8000.');
     } finally {
       setLoading(false);
     }
@@ -123,6 +127,11 @@ function HomePage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {error}
+          </Alert>
+        )}
         <Box sx={{ mb: 5, textAlign: 'center' }}>
           <Chip
             icon={<AIIcon />}
