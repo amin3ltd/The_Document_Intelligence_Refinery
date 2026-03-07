@@ -213,17 +213,21 @@ async def process_document(doc_id: str, file_path: Path):
         logger.info(f"[{doc_id}] Stage 3: Chunking")
         ldu_set = chunker_engine.chunk(extracted_doc, profile)
         
-        # Save chunks - from LDUSet.ldus
+        # Save chunks - in format expected by query_agent
         chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
-        # Convert LDU objects to serializable format
-        chunks_data = []
-        for ldu in ldu_set.ldus:
-            if hasattr(ldu, 'model_dump'):
-                chunks_data.append(ldu.model_dump())
-            else:
-                chunks_data.append(str(ldu))
+        # Convert LDU objects to serializable format with proper structure
+        chunks_data = {
+            "doc_id": ldu_set.doc_id,
+            "ldus": [
+                ldu.model_dump(mode="json") if hasattr(ldu, 'model_dump') else str(ldu)
+                for ldu in ldu_set.ldus
+            ],
+            "chunking_strategy": ldu_set.chunking_strategy,
+            "total_ldu_count": ldu_set.total_ldu_count,
+            "processing_time_ms": ldu_set.processing_time_ms,
+        }
         with open(chunks_path, "w", encoding="utf-8") as f:
-            f.write(json.dumps(chunks_data, indent=2))
+            json.dump(chunks_data, f, indent=2)
         document_status[doc_id].chunking_complete = True
         
         # Stage 4: Indexing
