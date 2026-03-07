@@ -25,6 +25,7 @@ import {
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
+import { documentApi } from '../services/api';
 
 interface UploadedFile {
   file: File;
@@ -47,6 +48,7 @@ function UploadPage() {
   const navigate = useNavigate();
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [selectedStrategy, setSelectedStrategy] = useState('auto');
+  const [error, setError] = useState<string | null>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const newFiles: UploadedFile[] = acceptedFiles.map((file) => ({
@@ -68,32 +70,34 @@ function UploadPage() {
     multiple: true,
   });
 
-  const simulateUpload = (newFiles: UploadedFile[]) => {
-    newFiles.forEach((fileData) => {
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += Math.random() * 15;
-        if (progress >= 100) {
-          progress = 100;
-          clearInterval(interval);
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.id === fileData.id
-                ? { ...f, progress: 100, status: 'completed' }
-                : f
-            )
-          );
-        } else {
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.id === fileData.id
-                ? { ...f, progress, status: progress < 30 ? 'uploading' : 'processing' }
-                : f
-            )
-          );
-        }
-      }, 500);
-    });
+  const simulateUpload = async (newFiles: UploadedFile[]) => {
+    setError(null);
+    
+    for (const fileData of newFiles) {
+      try {
+        // Make real API call
+        const response = await documentApi.upload(fileData.file, selectedStrategy);
+        
+        // Update file status to completed
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileData.id
+              ? { ...f, progress: 100, status: 'completed', id: response.id || f.id }
+              : f
+          )
+        );
+      } catch (err) {
+        console.error('Upload failed:', err);
+        setError(`Failed to upload ${fileData.file.name}. Make sure the API server is running.`);
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileData.id
+              ? { ...f, status: 'error', progress: 0 }
+              : f
+          )
+        );
+      }
+    }
   };
 
   const removeFile = (id: string) => {
@@ -115,6 +119,12 @@ function UploadPage() {
         <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
           Drag and drop your PDF files for intelligent extraction
         </Typography>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {error}
+          </Alert>
+        )}
 
         <Card
           sx={{
