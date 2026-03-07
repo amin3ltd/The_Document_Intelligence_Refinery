@@ -270,3 +270,11 @@ class LayoutAwareStrategy:
             block_id += 1
         
         return blocks
+    
+    def get_confidence(self, result: ExtractedDocument) -> float:
+        """Get confidence score from extraction result."""
+        # Use metadata confidence if available
+        if result.metadata and hasattr(result.metadata, 'confidence_score'):
+            return result.metadata.confidence_score
+        # Otherwise return default confidence for layout-aware extraction
+        return 0.85
