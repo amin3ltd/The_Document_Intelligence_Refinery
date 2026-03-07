@@ -24,6 +24,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from src.utils.config import get_config
 from src.agents.triage import TriageAgent
 from src.agents.extractor import ExtractionRouter
 from src.agents.chunker import Chunker
