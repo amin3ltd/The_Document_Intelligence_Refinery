@@ -100,7 +100,8 @@ class PageIndex(BaseModel):
         level: int,
         parent_id: Optional[str] = None,
         page_number: Optional[int] = None,
-        position: int = 0
+        position: int = 0,
+        summary: Optional[str] = None,
     ) -> NavigationNode:
         """Add a new node to the PageIndex tree."""
         node = NavigationNode(
@@ -110,7 +111,8 @@ class PageIndex(BaseModel):
             level=level,
             parent_id=parent_id,
             page_number=page_number,
-            position=position
+            position=position,
+            summary=summary,
         )
         
         self.nodes[node_id] = node
