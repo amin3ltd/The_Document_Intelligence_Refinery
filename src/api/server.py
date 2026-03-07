@@ -172,7 +172,7 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Stage 1: Triage
         logger.info(f"[{doc_id}] Stage 1: Triage")
-        profile = await triage_agent.analyze(str(file_path))
+        profile = triage_agent.analyze(str(file_path))
         document_status[doc_id].profile = profile
         
         # Save profile
