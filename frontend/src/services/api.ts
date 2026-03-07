@@ -65,10 +65,10 @@ export const documentApi = {
 
 // Query API
 export const queryApi = {
-  ask: async (question: string, documentIds: string[] = []) => {
+  ask: async (question: string, docId: string = '') => {
     const response = await api.post('/api/query', {
       question,
-      document_ids: documentIds,
+      doc_id: docId,
     });
     return response.data;
   },

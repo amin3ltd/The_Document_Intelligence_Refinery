@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -26,8 +26,10 @@ import {
   Person as UserIcon,
   Source as SourceIcon,
   CheckCircle as VerifyIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import { queryApi, documentApi } from '../services/api';
 
 interface Message {
   id: string;
@@ -40,29 +42,38 @@ interface Message {
   }>;
 }
 
-const mockDocuments = [
-  { id: '1', name: 'Q4 Financial Report.pdf' },
-  { id: '2', name: 'Market Analysis 2024.pdf' },
-  { id: '3', name: 'Product Specification.pdf' },
-];
-
-const mockMessages: Message[] = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: 'Hello! I\'m your document intelligence assistant. You can ask me questions about your uploaded documents, and I\'ll provide answers with source citations.',
-    sources: [],
-  },
-];
-
 function QueryPage() {
   const theme = useTheme();
-  const [messages, setMessages] = useState<Message[]>(mockMessages);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: '1',
+      role: 'assistant',
+      content: 'Hello! I\'m your document intelligence assistant. Upload documents first, then ask me questions about your documents, and I\'ll provide answers with source citations.',
+      sources: [],
+    },
+  ]);
   const [input, setInput] = useState('');
   const [selectedDoc, setSelectedDoc] = useState('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [documents, setDocuments] = useState<Array<{id: string; name: string}>>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSend = () => {
+  // Load documents on mount
+  useEffect(() => {
+    loadDocuments();
+  }, []);
+
+  const loadDocuments = async () => {
+    try {
+      const docs = await documentApi.list();
+      setDocuments(docs.documents || []);
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+      setError('Could not load documents. Make sure the API server is running.');
+    }
+  };
+
+  const handleSend = async () => {
     if (!input.trim()) return;
 
     const userMessage: Message = {
@@ -74,26 +85,37 @@ function QueryPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    setError(null);
 
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      // Make real API call to query the documents
+      const docId = selectedDoc === 'all' ? '' : selectedDoc;
+      const response = await queryApi.ask(input, docId);
+
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Based on the documents analyzed, here's what I found:
-
-The Q4 Financial Report shows strong revenue growth of 23% compared to the previous quarter. The total revenue reached $2.1M, with operating expenses at $950K, resulting in a net profit of $1.15M.
-
-This represents a significant improvement from Q3's profit of $700K.`,
-        sources: [
-          { page: 5, text: 'Revenue increased by 23% in Q4...', confidence: 0.95 },
-          { page: 5, text: 'Total revenue: $2.1M...', confidence: 0.98 },
-          { page: 6, text: 'Net profit: $1.15M...', confidence: 0.97 },
-        ],
+        content: response.answer || 'No relevant information found in the documents.',
+        sources: response.provenance?.sources?.map((s: { page?: number; text?: string; confidence?: number }) => ({
+          page: s.page || 0,
+          text: s.text || '',
+          confidence: s.confidence || 0,
+        })) || [],
       };
       setMessages((prev) => [...prev, aiResponse]);
+    } catch (err) {
+      console.error('Query failed:', err);
+      setError('Failed to get answer. Make sure the API server is running and documents are processed.');
+      const errorResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'Sorry, I could not get an answer from the documents. Please make sure the API server is running and you have uploaded documents.',
+        sources: [],
+      };
+      setMessages((prev) => [...prev, errorResponse]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -126,7 +148,7 @@ This represents a significant improvement from Q3's profit of $700K.`,
               onChange={(e) => setSelectedDoc(e.target.value)}
             >
               <MenuItem value="all">All Documents</MenuItem>
-              {mockDocuments.map((doc) => (
+              {documents.map((doc: {id: string; name: string}) => (
                 <MenuItem key={doc.id} value={doc.id}>
                   {doc.name}
                 </MenuItem>
