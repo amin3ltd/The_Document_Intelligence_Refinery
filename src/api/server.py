@@ -17,7 +17,7 @@ import os
 import json
 import uuid
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
@@ -35,7 +35,7 @@ from src.models.document_profile import DocumentProfile
 from src.models.extracted_document import ExtractedDocument
 from src.models.ldu import LDU
 from src.models.page_index import PageIndex
-from src.models.provenance import ProvenanceChain, ProvenanceSource
+from src.models.provenance import ProvenanceSource
 from src.utils.ledger import ExtractionLedger
 from src.utils.system_check import check_system_health
 from loguru import logger
@@ -84,8 +84,9 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
-    provenance: ProvenanceChain
-    mode_used: str
+    sources: List[Dict[str, Any]]
+    confidence: float
+    tool_used: str
 
 
 class DocumentStatus(BaseModel):
@@ -319,29 +320,28 @@ async def query_document(request: QueryRequest) -> QueryResponse:
     chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
     index_path = PAGEINDEX_DIR / f"{doc_id}_pageindex.json"
     
-    chunks = []
-    page_index = None
+    # Check if chunks exist
+    if not chunks_path.exists():
+        raise HTTPException(status_code=404, detail="Document not processed yet. Please wait for processing to complete.")
     
-    if chunks_path.exists():
-        with open(chunks_path, "r") as f:
-            chunks = [LDU(**chunk) for chunk in json.load(f)]
-    
-    if index_path.exists():
-        with open(index_path, "r") as f:
-            page_index = PageIndex(**json.load(f))
+    # Create query agent for this document
+    query_agent = create_query_agent(
+        doc_id=doc_id,
+        ldu_file=str(chunks_path),
+        index_file=str(index_path)
+    )
     
     # Query using the query agent
-    result = await query_agent.query(
+    result = query_agent.query(
         question=request.question,
-        chunks=chunks,
-        page_index=page_index,
         mode=request.mode
     )
     
     return QueryResponse(
         answer=result.answer,
-        provenance=result.provenance,
-        mode_used=result.mode_used
+        sources=result.sources,
+        confidence=result.confidence,
+        tool_used=result.tool_used
     )
 
 
