@@ -367,9 +367,19 @@ async def query_document(request: QueryRequest) -> QueryResponse:
         mode=request.mode
     )
     
+    # Convert ProvenanceSource objects to dicts
+    sources = []
+    for source in result.sources:
+        if hasattr(source, 'model_dump'):
+            sources.append(source.model_dump())
+        elif hasattr(source, 'to_dict'):
+            sources.append(source.to_dict())
+        else:
+            sources.append(dict(source))
+    
     return QueryResponse(
         answer=result.answer,
-        sources=result.sources,
+        sources=sources,
         confidence=result.confidence,
         tool_used=result.tool_used
     )
