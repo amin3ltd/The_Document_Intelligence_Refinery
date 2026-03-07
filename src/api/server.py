@@ -35,6 +35,7 @@ from src.models.ldu import LDU
 from src.models.page_index import PageIndex
 from src.models.provenance import ProvenanceChain, ProvenanceSource
 from src.utils.ledger import ExtractionLedger
+from src.utils.system_check import check_system_health
 from loguru import logger
 
 # Initialize FastAPI app
@@ -308,11 +309,61 @@ async def query_document(request: QueryRequest) -> QueryResponse:
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint with system health information"""
+    # Get system health report
+    try:
+        system_health = check_system_health()
+        health_data = system_health.get_summary()
+    except Exception as e:
+        logger.warning(f"System health check failed: {e}")
+        health_data = {"error": str(e)}
+    
     return {
-        "status": "healthy",
+        "status": "healthy" if health_data.get("healthy", False) else "degraded",
         "timestamp": datetime.utcnow().isoformat(),
-        "documents_processed": len([s for s in document_status.values() if s.status == "completed"])
+        "documents_processed": len([s for s in document_status.values() if s.status == "completed"]),
+        "system_health": health_data,
+    }
+
+
+@app.get("/config/safety-limits")
+async def get_safety_limits():
+    """Get all safety limits configuration - configurable from UI"""
+    config = get_config()
+    return {
+        "safety_limits": config.safety_limits_config,
+        "defaults": {
+            "max_context_tokens": 4096,
+            "temperature_min": 0.0,
+            "temperature_max": 0.3,
+            "temperature_default": 0.1,
+            "max_memory_mb": 2048,
+            "max_image_size_mb": 50,
+            "max_pages_per_batch": 5,
+            "request_timeout": 120.0,
+            "page_process_timeout": 60.0,
+            "total_timeout": 600.0,
+            "max_retries": 3,
+            "base_retry_delay": 1.0,
+            "max_retry_delay": 30.0,
+            "exponential_base": 2.0,
+            "cpu_throttle_threshold": 80.0,
+            "cpu_pause_threshold": 95.0,
+            "health_check_interval": 5,
+            "max_pages_total": 500,
+            "max_document_size_mb": 100,
+        }
+    }
+
+
+@app.put("/config/safety-limits")
+async def update_safety_limits(limits: dict):
+    """Update safety limits configuration - all configurable from UI"""
+    config = get_config()
+    config.update_safety_limits(limits)
+    return {
+        "status": "success",
+        "safety_limits": config.safety_limits_config
     }
 
 
