@@ -46,6 +46,15 @@ app = FastAPI(
     version="0.1.0"
 )
 
+# Add CORS middleware to allow frontend communication
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Configuration
 REFINERY_DIR = Path(".refinery")
 PROFILES_DIR = REFINERY_DIR / "profiles"
