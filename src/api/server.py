@@ -30,6 +30,11 @@ from src.agents.triage import TriageAgent
 from src.agents.extractor import ExtractionRouter
 from src.agents.chunker import Chunker
 from src.agents.indexer import Indexer
+from src.strategies.fast_text import FastTextStrategy
+from src.strategies.layout_aware import LayoutAwareStrategy
+from src.strategies.vision import VisionStrategy
+from src.agents.chunker import Chunker
+from src.agents.indexer import Indexer
 from src.agents.query_agent import create_query_agent, QueryResult
 from src.models.document_profile import DocumentProfile
 from src.models.extracted_document import ExtractedDocument
@@ -70,6 +75,10 @@ PAGEINDEX_DIR.mkdir(parents=True, exist_ok=True)
 # Global instances
 triage_agent = TriageAgent()
 extraction_router = ExtractionRouter()
+# Register extraction strategies
+extraction_router.register_strategy(FastTextStrategy())
+extraction_router.register_strategy(LayoutAwareStrategy())
+extraction_router.register_strategy(VisionStrategy())
 chunker_engine = Chunker()
 indexer = Indexer()
 ledger = ExtractionLedger()
