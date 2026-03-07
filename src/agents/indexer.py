@@ -76,7 +76,7 @@ class SummaryGenerator:
         
         # Take first paragraph as summary
         for ldu in page_ldus:
-            if ldu.chunk_type.value == "paragraph":
+            if ldu.chunk_type == "paragraph":
                 return ldu.content[:200] + "..." if len(ldu.content) > 200 else ldu.content
         
         return page_ldus[0].content[:200]
