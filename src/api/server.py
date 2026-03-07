@@ -215,26 +215,38 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Save chunks
         chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
-        # Handle chunker output - could be list of LDU, list of tuples, or list of dicts
+        # Handle chunker output - convert to serializable format
         chunks_data = []
-        for c in chunks:
-            if hasattr(c, 'model_dump'):
+        for item in chunks:
+            # Handle nested structures (list of lists, etc.)
+            if isinstance(item, list):
+                inner_data = []
+                for inner_item in item:
+                    if hasattr(inner_item, 'model_dump'):
+                        inner_data.append(inner_item.model_dump())
+                    elif isinstance(inner_item, dict):
+                        inner_data.append(inner_item)
+                    else:
+                        inner_data.append(str(inner_item))
+                chunks_data.append(inner_data)
+            elif hasattr(item, 'model_dump'):
                 # It's an LDU object
-                chunks_data.append(c.model_dump())
-            elif isinstance(c, tuple):
-                # It's a tuple - try to convert first element if it's an LDU
-                if len(c) > 0 and hasattr(c[0], 'model_dump'):
-                    chunks_data.append(c[0].model_dump())
-                else:
-                    chunks_data.append(list(c) if not isinstance(c, list) else c)
-            elif isinstance(c, dict):
-                chunks_data.append(c)
+                chunks_data.append(item.model_dump())
+            elif isinstance(item, dict):
+                chunks_data.append(item)
+            elif isinstance(item, (list, tuple)):
+                # Convert tuple/list to list and process
+                processed = []
+                for sub_item in item:
+                    if hasattr(sub_item, 'model_dump'):
+                        processed.append(sub_item.model_dump())
+                    elif isinstance(sub_item, dict):
+                        processed.append(sub_item)
+                    else:
+                        processed.append(str(sub_item))
+                chunks_data.append(processed)
             else:
-                # Try to convert to list
-                try:
-                    chunks_data.append(list(c))
-                except:
-                    chunks_data.append(str(c))
+                chunks_data.append(str(item))
         with open(chunks_path, "w", encoding="utf-8") as f:
             f.write(json.dumps(chunks_data, indent=2))
         document_status[doc_id].chunking_complete = True
