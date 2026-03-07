@@ -184,7 +184,8 @@ async def process_document(doc_id: str, file_path: Path):
         
         # Stage 2: Extraction
         logger.info(f"[{doc_id}] Stage 2: Extraction")
-        extracted_doc = await extraction_router.extract(str(file_path), profile)
+        extraction_result = extraction_router.route(str(file_path), profile)
+        extracted_doc = extraction_result.document
         
         # Save extraction
         extraction_path = EXTRACTIONS_DIR / f"{doc_id}_extraction.json"
