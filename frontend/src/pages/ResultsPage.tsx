@@ -165,7 +165,70 @@ function ResultsPage() {
             color="success"
             variant="outlined"
           />
+          {profile && (
+            <>
+              <Chip
+                label={profile.origin_type || 'Unknown'}
+                variant="outlined"
+                color="info"
+              />
+              <Chip
+                label={profile.layout_complexity || 'Unknown'}
+                variant="outlined"
+                color="secondary"
+              />
+              <Chip
+                label={profile.language || 'Unknown'}
+                variant="outlined"
+              />
+            </>
+          )}
         </Box>
+
+        {/* Document Profile Section - Always Visible */}
+        {profile && (
+          <Card sx={{ mb: 3, bgcolor: alpha('#6366f1', 0.1), border: '1px solid', borderColor: alpha('#6366f1', 0.3) }}>
+            <CardContent>
+              <Typography variant="h6" fontWeight="600" sx={{ mb: 2, color: '#6366f1' }}>
+                📋 Document Profile
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={6} md={3}>
+                  <Typography variant="caption" color="text.secondary">Origin Type</Typography>
+                  <Typography variant="body1" fontWeight="500">{profile.origin_type}</Typography>
+                </Grid>
+                <Grid item xs={6} md={3}>
+                  <Typography variant="caption" color="text.secondary">Layout Complexity</Typography>
+                  <Typography variant="body1" fontWeight="500">{profile.layout_complexity}</Typography>
+                </Grid>
+                <Grid item xs={6} md={3}>
+                  <Typography variant="caption" color="text.secondary">Domain Hint</Typography>
+                  <Typography variant="body1" fontWeight="500">{profile.domain_hint}</Typography>
+                </Grid>
+                <Grid item xs={6} md={3}>
+                  <Typography variant="caption" color="text.secondary">Extraction Cost</Typography>
+                  <Typography variant="body1" fontWeight="500">{profile.extraction_cost_hint}</Typography>
+                </Grid>
+                <Grid item xs={6} md={3}>
+                  <Typography variant="caption" color="text.secondary">Language</Typography>
+                  <Typography variant="body1" fontWeight="500">{profile.language}</Typography>
+                </Grid>
+                <Grid item xs={6} md={3}>
+                  <Typography variant="caption" color="text.secondary">Confidence</Typography>
+                  <Typography variant="body1" fontWeight="500">{(profile.confidence_score * 100).toFixed(0)}%</Typography>
+                </Grid>
+                <Grid item xs={6} md={3}>
+                  <Typography variant="caption" color="text.secondary">Pages</Typography>
+                  <Typography variant="body1" fontWeight="500">{profile.page_count}</Typography>
+                </Grid>
+                <Grid item xs={6} md={3}>
+                  <Typography variant="caption" color="text.secondary">Has Tables</Typography>
+                  <Typography variant="body1" fontWeight="500">{profile.has_tables ? 'Yes' : 'No'}</Typography>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        )}
 
         <Card
           sx={{

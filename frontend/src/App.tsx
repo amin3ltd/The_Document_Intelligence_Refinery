@@ -6,7 +6,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import DashboardLayout from './components/DashboardLayout';
 import HomePage from './pages/HomePage';
 import UploadPage from './pages/UploadPage';
-import ResultsPage from './pages/ResultsPage';
 import QueryPage from './pages/QueryPage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -103,8 +102,6 @@ function App() {
               <Route path="/" element={<DashboardLayout />}>
                 <Route index element={<HomePage />} />
                 <Route path="upload" element={<UploadPage />} />
-                <Route path="results" element={<Navigate to="/" replace />} />
-                <Route path="results/:id" element={<ResultsPage />} />
                 <Route path="query" element={<QueryPage />} />
                 <Route path="settings" element={<SettingsPage />} />
               </Route>

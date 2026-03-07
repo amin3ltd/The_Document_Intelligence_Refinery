@@ -287,7 +287,7 @@ async def get_document_status(doc_id: str) -> DocumentStatus:
                     profile_path = PROFILES_DIR / f"{uuid_part}.json"
         
         if profile_path.exists():
-            with open(profile_path, "r") as f:
+            with open(profile_path, "r", encoding="utf-8") as f:
                 profile_data = json.load(f)
             profile = DocumentProfile(**profile_data)
             
@@ -320,7 +320,7 @@ async def get_document_profile(doc_id: str) -> DocumentProfile:
     if not profile_path.exists():
         raise HTTPException(status_code=404, detail="Profile not found")
     
-    with open(profile_path, "r") as f:
+    with open(profile_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return DocumentProfile(**data)
 
@@ -328,11 +328,32 @@ async def get_document_profile(doc_id: str) -> DocumentProfile:
 @app.get("/api/documents/{doc_id}/extraction")
 async def get_extraction(doc_id: str) -> ExtractedDocument:
     """Get extraction results"""
+    # Try multiple approaches to find the extraction file
+    extraction_path = None
+    
+    # First try direct path
     extraction_path = EXTRACTIONS_DIR / f"{doc_id}_extraction.json"
+    
+    # Try with doc_ prefix if not already present
     if not extraction_path.exists():
+        if not doc_id.startswith("doc_"):
+            extraction_path = EXTRACTIONS_DIR / f"doc_{doc_id}_extraction.json"
+    
+    # Search for extraction files that might match
+    if not extraction_path.exists():
+        # Extract just the UUID part if possible (first 36 chars / 8-4-4-4-12 format)
+        uuid_match = doc_id.replace("doc_", "")[:36] if len(doc_id) > 36 else doc_id
+        for f in EXTRACTIONS_DIR.glob("*_extraction.json"):
+            stem = f.stem.replace("_extraction", "")
+            # Check if the UUID part matches
+            if uuid_match in stem or stem.startswith(uuid_match) or stem[:36] == uuid_match:
+                extraction_path = f
+                break
+    
+    if not extraction_path or not extraction_path.exists():
         raise HTTPException(status_code=404, detail="Extraction not found")
     
-    with open(extraction_path, "r") as f:
+    with open(extraction_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return ExtractedDocument(**data)
 
@@ -340,11 +361,25 @@ async def get_extraction(doc_id: str) -> ExtractedDocument:
 @app.get("/api/documents/{doc_id}/chunks")
 async def get_chunks(doc_id: str) -> List[LDU]:
     """Get semantic chunks"""
+    # Try multiple approaches to find the chunks file
     chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
+    
     if not chunks_path.exists():
+        if not doc_id.startswith("doc_"):
+            chunks_path = EXTRACTIONS_DIR / f"doc_{doc_id}_chunks.json"
+    
+    if not chunks_path.exists():
+        uuid_match = doc_id.replace("doc_", "")[:36] if len(doc_id) > 36 else doc_id
+        for f in EXTRACTIONS_DIR.glob("*_chunks.json"):
+            stem = f.stem.replace("_chunks", "")
+            if uuid_match in stem or stem.startswith(uuid_match) or stem[:36] == uuid_match:
+                chunks_path = f
+                break
+    
+    if not chunks_path or not chunks_path.exists():
         raise HTTPException(status_code=404, detail="Chunks not found")
     
-    with open(chunks_path, "r") as f:
+    with open(chunks_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return [LDU(**chunk) for chunk in data]
 
@@ -352,11 +387,33 @@ async def get_chunks(doc_id: str) -> List[LDU]:
 @app.get("/api/documents/{doc_id}/pageindex")
 async def get_pageindex(doc_id: str) -> PageIndex:
     """Get PageIndex tree"""
+    # Try multiple approaches to find the pageindex file
     index_path = PAGEINDEX_DIR / f"{doc_id}_pageindex.json"
+    
     if not index_path.exists():
+        if not doc_id.startswith("doc_"):
+            index_path = PAGEINDEX_DIR / f"doc_{doc_id}_pageindex.json"
+    
+    if not index_path.exists():
+        uuid_match = doc_id.replace("doc_", "")[:36] if len(doc_id) > 36 else doc_id
+        for f in PAGEINDEX_DIR.glob("*_pageindex.json"):
+            stem = f.stem.replace("_pageindex", "")
+            if uuid_match in stem or stem.startswith(uuid_match) or stem[:36] == uuid_match:
+                index_path = f
+                break
+        
+        # Also try with _index.json suffix
+        if not index_path or not index_path.exists():
+            for f in PAGEINDEX_DIR.glob("*_index.json"):
+                stem = f.stem.replace("_index", "")
+                if uuid_match in stem or stem.startswith(uuid_match) or stem[:36] == uuid_match:
+                    index_path = f
+                    break
+    
+    if not index_path or not index_path.exists():
         raise HTTPException(status_code=404, detail="PageIndex not found")
     
-    with open(index_path, "r") as f:
+    with open(index_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return PageIndex(**data)
 

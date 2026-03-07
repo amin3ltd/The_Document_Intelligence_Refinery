@@ -24,8 +24,10 @@ import {
   Settings as SettingsIcon,
   Menu as MenuIcon,
   AutoAwesome as AIIcon,
+  Assessment as ProfileIcon,
 } from '@mui/icons-material';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { documentApi } from '../services/api';
 
 const drawerWidth = 260;
 
@@ -38,9 +40,23 @@ const menuItems = [
 
 function DashboardLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [profile, setProfile] = useState<any>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
+
+  // Check if we're on results page and fetch profile
+  useEffect(() => {
+    const match = location.pathname.match(/\/results\/(.+)/);
+    if (match) {
+      const docId = match[1];
+      documentApi.getStatus(docId)
+        .then((status) => setProfile(status.profile))
+        .catch(() => setProfile(null));
+    } else {
+      setProfile(null);
+    }
+  }, [location.pathname]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -120,6 +136,44 @@ function DashboardLayout() {
         ))}
       </List>
       <Divider />
+      {/* Document Profile Section - Shows when on results page */}
+      {profile && (
+        <Box sx={{ p: 2 }}>
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              background: alpha(theme.palette.primary.main, 0.1),
+              border: `1px solid ${alpha(theme.palette.primary.main, 0.3)}`,
+            }}
+          >
+            <Typography variant="caption" color="primary.main" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ProfileIcon fontSize="small" /> Document Profile
+            </Typography>
+            <Divider sx={{ my: 1 }} />
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary">Origin</Typography>
+              <Typography variant="body2" fontWeight={500}>{profile.origin_type || 'N/A'}</Typography>
+            </Box>
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary">Layout</Typography>
+              <Typography variant="body2" fontWeight={500}>{profile.layout_complexity || 'N/A'}</Typography>
+            </Box>
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary">Language</Typography>
+              <Typography variant="body2" fontWeight={500}>{profile.language || 'N/A'}</Typography>
+            </Box>
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary">Confidence</Typography>
+              <Typography variant="body2" fontWeight={500}>{(profile.confidence_score * 100 || 0).toFixed(0)}%</Typography>
+            </Box>
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary">Pages</Typography>
+              <Typography variant="body2" fontWeight={500}>{profile.page_count || 0}</Typography>
+            </Box>
+          </Box>
+        </Box>
+      )}
       <Box sx={{ p: 2 }}>
         <Box
           sx={{

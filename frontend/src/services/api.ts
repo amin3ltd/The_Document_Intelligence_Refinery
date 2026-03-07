@@ -53,7 +53,7 @@ export const documentApi = {
   },
 
   getResults: async (documentId: string) => {
-    const response = await api.get(`/api/documents/${documentId}/results`);
+    const response = await api.get(`/api/documents/${documentId}/extraction`);
     return response.data;
   },
 
