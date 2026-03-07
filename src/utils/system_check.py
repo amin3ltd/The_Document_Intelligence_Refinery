@@ -267,7 +267,20 @@ class SystemHealthChecker:
         """Check if optional tools are available."""
         results = []
         
+        # Get configured VLM provider from config
+        try:
+            from src.utils.config import get_config
+            config = get_config()
+            vlm_provider = config.get("vlm.provider", "lmstudio")  # Default to lmstudio
+        except Exception:
+            vlm_provider = "lmstudio"  # Default if config fails
+        
         for tool_name, tool_info in self.OPTIONAL_TOOLS.items():
+            # Skip VLM providers that aren't the configured one
+            if tool_name in ("ollama", "lm_studio") and tool_name.replace("_", "") != vlm_provider:
+                # Skip checking other VLM providers
+                continue
+            
             check = ToolCheck(name=tool_name, installed=False)
             
             # Check via command if specified
