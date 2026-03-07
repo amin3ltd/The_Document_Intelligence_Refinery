@@ -109,7 +109,7 @@ async def root():
     }
 
 
-@app.post("/documents/upload")
+@app.post("/api/documents/upload")
 async def upload_document(
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = None
@@ -210,7 +210,22 @@ async def process_document(doc_id: str, file_path: Path):
         document_status[doc_id].error = str(e)
 
 
-@app.get("/documents/{doc_id}/status")
+@app.get("/api/documents")
+async def list_documents():
+    """List all uploaded documents"""
+    documents = []
+    if PROFILES_DIR.exists():
+        for profile_file in PROFILES_DIR.glob("*.json"):
+            doc_id = profile_file.stem
+            status = document_status.get(doc_id, DocumentStatus(doc_id=doc_id, status="unknown"))
+            documents.append({
+                "id": doc_id,
+                "name": status.profile.filename if status.profile else profile_file.name,
+                "status": status.status,
+            })
+    return {"documents": documents}
+
+@app.get("/api/documents/{doc_id}/status")
 async def get_document_status(doc_id: str) -> DocumentStatus:
     """Get processing status of a document"""
     if doc_id not in document_status:
@@ -218,7 +233,7 @@ async def get_document_status(doc_id: str) -> DocumentStatus:
     return document_status[doc_id]
 
 
-@app.get("/documents/{doc_id}/profile")
+@app.get("/api/documents/{doc_id}/profile")
 async def get_document_profile(doc_id: str) -> DocumentProfile:
     """Get document profile"""
     profile_path = PROFILES_DIR / f"{doc_id}.json"
@@ -230,7 +245,7 @@ async def get_document_profile(doc_id: str) -> DocumentProfile:
     return DocumentProfile(**data)
 
 
-@app.get("/documents/{doc_id}/extraction")
+@app.get("/api/documents/{doc_id}/extraction")
 async def get_extraction(doc_id: str) -> ExtractedDocument:
     """Get extraction results"""
     extraction_path = EXTRACTIONS_DIR / f"{doc_id}_extraction.json"
@@ -242,7 +257,7 @@ async def get_extraction(doc_id: str) -> ExtractedDocument:
     return ExtractedDocument(**data)
 
 
-@app.get("/documents/{doc_id}/chunks")
+@app.get("/api/documents/{doc_id}/chunks")
 async def get_chunks(doc_id: str) -> List[LDU]:
     """Get semantic chunks"""
     chunks_path = EXTRACTIONS_DIR / f"{doc_id}_chunks.json"
@@ -254,7 +269,7 @@ async def get_chunks(doc_id: str) -> List[LDU]:
     return [LDU(**chunk) for chunk in data]
 
 
-@app.get("/documents/{doc_id}/pageindex")
+@app.get("/api/documents/{doc_id}/pageindex")
 async def get_pageindex(doc_id: str) -> PageIndex:
     """Get PageIndex tree"""
     index_path = PAGEINDEX_DIR / f"{doc_id}_pageindex.json"
@@ -266,7 +281,7 @@ async def get_pageindex(doc_id: str) -> PageIndex:
     return PageIndex(**data)
 
 
-@app.post("/query", response_model=QueryResponse)
+@app.post("/api/query", response_model=QueryResponse)
 async def query_document(request: QueryRequest) -> QueryResponse:
     """Query the document knowledge base"""
     # Load document data
@@ -307,7 +322,7 @@ async def query_document(request: QueryRequest) -> QueryResponse:
     )
 
 
-@app.get("/health")
+@app.get("/api/health")
 async def health_check():
     """Health check endpoint with system health information"""
     # Get system health report
@@ -326,7 +341,7 @@ async def health_check():
     }
 
 
-@app.get("/config/safety-limits")
+@app.get("/api/config/safety-limits")
 async def get_safety_limits():
     """Get all safety limits configuration - configurable from UI"""
     config = get_config()
@@ -356,7 +371,7 @@ async def get_safety_limits():
     }
 
 
-@app.put("/config/safety-limits")
+@app.put("/api/config/safety-limits")
 async def update_safety_limits(limits: dict):
     """Update safety limits configuration - all configurable from UI"""
     config = get_config()
